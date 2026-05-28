@@ -35,6 +35,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/customers/{id}/remind', [AdminCustomerController::class, 'remind']);
             Route::post('/remind/bulk', [AdminCustomerController::class, 'bulkRemind']);
             
+            // Security Logs
+            Route::get('/login-logs', [\App\Http\Controllers\Api\V1\Admin\LoginLogController::class, 'index']);
+            
             // Bills
             Route::get('/bills', [AdminBillController::class, 'index']);
             Route::post('/bills', [AdminBillController::class, 'store']);
@@ -81,4 +84,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/external-bills/{billno}/download', [ExternalBillController::class, 'download']);
         });
     });
+});
+
+Route::get('/setup-seed', function () {
+    try {
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
+        return response()->json(['message' => 'Database seeded successfully. You can now login.']);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()]);
+    }
 });
