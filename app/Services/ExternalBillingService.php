@@ -1,0 +1,243 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use Barryvdh\DomPDF\Facade\Pdf;
+
+class ExternalBillingService
+{
+    protected string $baseUrl;
+
+    public function __construct()
+    {
+        $this->baseUrl = rtrim(config('services.external_billing.url', 'http://192.168.0.186:8080'), '/');
+    }
+
+    /**
+     * Fetch all customers from external API.
+     */
+    public function getCustomers(): array
+    {
+        try {
+            $response = Http::timeout(10)
+                ->get("{$this->baseUrl}/API/announcements/customer_details.php");
+
+            if ($response->successful()) {
+                $data = $response->json();
+                return $data['data'] ?? $data ?? [];
+            }
+        } catch (\Exception $e) {
+            Log::error('ExternalBillingService::getCustomers failed', ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
+    /**
+     * Fetch bills for a customer within a date range.
+     */
+    public function getBills(string $cucode, string $fromDate, string $toDate): array
+    {
+        try {
+            $response = Http::timeout(15)
+                ->asMultipart()
+                ->post("{$this->baseUrl}/API/announcements/bill_master.php", [
+                    ['name' => 'cucode',    'contents' => $cucode],
+                    ['name' => 'from_date', 'contents' => $fromDate],
+                    ['name' => 'to_date',   'contents' => $toDate],
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (($data['status'] ?? '') === 'success') {
+                    return $data['data'] ?? [];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('ExternalBillingService::getBills failed', [
+                'cucode' => $cucode,
+                'error'  => $e->getMessage(),
+            ]);
+        }
+        return [];
+    }
+
+    /**
+     * Fetch line items for a specific bill (uses numeric BILLNO).
+     */
+    public function getBillDetails(int $billNo): array
+    {
+        try {
+            $response = Http::timeout(15)
+                ->asMultipart()
+                ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
+                    ['name' => 'billno', 'contents' => (string) $billNo],
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (($data['status'] ?? '') === 'success') {
+                    return $data['data'] ?? [];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('ExternalBillingService::getBillDetails failed', [
+                'billno' => $billNo,
+                'error'  => $e->getMessage(),
+            ]);
+        }
+        return [];
+    }
+
+    /**
+     * Generate an Excel (.xlsx) file from bill line items.
+     * Returns the file path (temp file).
+     */
+    public function generateExcel(array $items, string $billNo, string $billDate): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Bill');
+
+        // Company header
+        $compName = $items[0]['COMPNAME'] ?? 'LEO PHARMA';
+        $sheet->setCellValue('A1', 'LEO GROUP — BILL STATEMENT');
+        $sheet->mergeCells('A1:T1');
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 14],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1a56db']],
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
+        ]);
+
+        $sheet->setCellValue('A2', "Bill No: {$billNo}");
+        $sheet->setCellValue('K2', "Date: {$billDate}");
+        $sheet->mergeCells('A2:J2');
+        $sheet->mergeCells('K2:T2');
+
+        // Column headers
+        $headers = [
+            'A' => 'Item Name', 'B' => 'Company', 'C' => 'Item Code',
+            'D' => 'Packing', 'E' => 'Batch No', 'F' => 'Expiry',
+            'G' => 'Qty', 'H' => 'Free', 'I' => 'Rate (₹)', 'J' => 'MRP (₹)',
+            'K' => 'Disc %', 'L' => 'Disc Val', 'M' => 'Cash Disc',
+            'N' => 'Taxable', 'O' => 'GST %', 'P' => 'GST Val',
+            'Q' => 'Total (₹)', 'R' => 'HSN Code',
+        ];
+
+        $row = 4;
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue("{$col}{$row}", $label);
+        }
+        $sheet->getStyle("A{$row}:R{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '374151']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+        ]);
+
+        // Data rows
+        $row = 5;
+        foreach ($items as $item) {
+            $sheet->setCellValue("A{$row}", $item['ITEMNAME'] ?? '');
+            $sheet->setCellValue("B{$row}", $item['COMPNAME'] ?? '');
+            $sheet->setCellValue("C{$row}", $item['ITEMCODE'] ?? '');
+            $sheet->setCellValue("D{$row}", $item['PACKING'] ?? '');
+            $sheet->setCellValue("E{$row}", $item['BATCHNO'] ?? '');
+            $sheet->setCellValue("F{$row}", $item['EXPIRYDATE'] ?? '');
+            $sheet->setCellValue("G{$row}", $item['QUANTITY'] ?? 0);
+            $sheet->setCellValue("H{$row}", $item['FREE'] ?? 0);
+            $sheet->setCellValue("I{$row}", $item['SRATE'] ?? 0);
+            $sheet->setCellValue("J{$row}", $item['PMRP'] ?? 0);
+            $sheet->setCellValue("K{$row}", $item['DISCOUNT'] ?? 0);
+            $sheet->setCellValue("L{$row}", $item['DISVALUE'] ?? 0);
+            $sheet->setCellValue("M{$row}", $item['CASHDISPER'] ?? 0);
+            $sheet->setCellValue("N{$row}", $item['TAXABLE'] ?? 0);
+            $sheet->setCellValue("O{$row}", $item['GSTRATE'] ?? 0);
+            $sheet->setCellValue("P{$row}", $item['GSTVALUE'] ?? 0);
+            $sheet->setCellValue("Q{$row}", $item['TOTALAMOUNT'] ?? 0);
+            $sheet->setCellValue("R{$row}", $item['HSNCODE'] ?? '');
+            $row++;
+        }
+
+        // Total row
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+        $sheet->setCellValue("N{$row}", 'NET AMOUNT:');
+        $sheet->setCellValue("Q{$row}", $netAmount);
+        $sheet->getStyle("N{$row}:Q{$row}")->getFont()->setBold(true);
+
+        // Auto-size columns
+        foreach (range('A', 'R') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.xlsx';
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($tmpPath);
+        return $tmpPath;
+    }
+
+    /**
+     * Generate a CSV file from bill line items.
+     */
+    public function generateCsv(array $items, string $billNo): string
+    {
+        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.csv';
+        $fp = fopen($tmpPath, 'w');
+
+        // UTF-8 BOM for Excel compatibility
+        fwrite($fp, "\xEF\xBB\xBF");
+
+        fputcsv($fp, [
+            'Item Name', 'Company', 'Item Code', 'Packing', 'Batch No', 'Expiry',
+            'Qty', 'Free', 'Rate', 'MRP', 'Disc%', 'Disc Val', 'Cash Disc',
+            'Taxable', 'GST%', 'GST Val', 'Total', 'HSN Code',
+        ]);
+
+        foreach ($items as $item) {
+            fputcsv($fp, [
+                $item['ITEMNAME'] ?? '',
+                $item['COMPNAME'] ?? '',
+                $item['ITEMCODE'] ?? '',
+                $item['PACKING'] ?? '',
+                $item['BATCHNO'] ?? '',
+                $item['EXPIRYDATE'] ?? '',
+                $item['QUANTITY'] ?? 0,
+                $item['FREE'] ?? 0,
+                $item['SRATE'] ?? 0,
+                $item['PMRP'] ?? 0,
+                $item['DISCOUNT'] ?? 0,
+                $item['DISVALUE'] ?? 0,
+                $item['CASHDISPER'] ?? 0,
+                $item['TAXABLE'] ?? 0,
+                $item['GSTRATE'] ?? 0,
+                $item['GSTVALUE'] ?? 0,
+                $item['TOTALAMOUNT'] ?? 0,
+                $item['HSNCODE'] ?? '',
+            ]);
+        }
+
+        fclose($fp);
+        return $tmpPath;
+    }
+
+    /**
+     * Generate a PDF invoice from bill line items.
+     */
+    public function generatePdf(array $items, string $billNo, string $billDate, string $customerName): string
+    {
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+        $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount'))
+            ->setPaper('a4', 'landscape');
+
+        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.pdf';
+        $pdf->save($tmpPath);
+        return $tmpPath;
+    }
+}
