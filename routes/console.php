@@ -10,6 +10,9 @@ Artisan::command('inspire', function () {
 
 Schedule::command('reminders:process')->dailyAt('09:00');
 
-// Nightly sync: pull fresh customers + bills from ERP at 2am
-Schedule::command('bms:sync-bills')->dailyAt('02:00')->runInBackground();
+// Nightly deep sync: pull fresh customers + 30 days of bills from ERP at 2am
+Schedule::command('bms:sync-bills --days=30')->dailyAt('02:00')->withoutOverlapping()->runInBackground();
+
+// Hourly incremental sync: keep today's and yesterday's bills fresh so dashboard updates gradually
+Schedule::command('bms:sync-bills --days=2')->hourly()->withoutOverlapping()->runInBackground();
 
