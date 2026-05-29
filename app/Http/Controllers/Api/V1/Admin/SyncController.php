@@ -70,31 +70,44 @@ class SyncController extends Controller
             $phone    = trim($c['WHATSAPPNO'] ?? '') ?: null;
             $hasReal  = ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL));
 
-            // ── Strategy A: has a real email ─────────────────────────────────
+            // ── Strategy A: has a real email ──────────────────────────────────
             if ($hasReal) {
-                $existingUser = $usersByEmail[$rawEmail] ?? null;
-
-                if ($existingUser) {
-                    $changed = false;
-                    if ($existingUser->name !== $name) { $existingUser->name = $name; $changed = true; }
-                    if ($phone && $existingUser->phone !== $phone) { $existingUser->phone = $phone; $changed = true; }
-                    if ($changed) { $existingUser->save(); $updated++; }
-
-                    // Sync cucode on existing Customer record
-                    $cust = $customersByCode[$code] ?? Customer::where('user_id', $existingUser->id)->first();
-                    if ($cust && $code && $cust->external_cucode !== $code) {
-                        $cust->external_cucode = $code;
-                        $cust->save();
-                    }
+                // Check if email was already used in this current sync batch
+                if (isset($usedPlaceholders[$rawEmail])) {
+                    $hasReal = false; // Force down to Strategy C
                 } else {
-                    $userRowsToInsert[] = [
-                        'email' => $rawEmail,
-                        'name'  => $name,
-                        'phone' => $phone,
-                        'code'  => $code,
-                    ];
-                    $usedPlaceholders[$rawEmail] = true;
+                    $existingUser = $usersByEmail[$rawEmail] ?? null;
+
+                    if ($existingUser) {
+                        $cust = $customersByCode[$code] ?? Customer::where('user_id', $existingUser->id)->first();
+                        
+                        // If the existing user is linked to a DIFFERENT customer code, we have an email collision in the DB.
+                        if ($cust && $cust->external_cucode && $cust->external_cucode !== $code) {
+                            $hasReal = false; // Force down to Strategy C
+                        } else {
+                            $changed = false;
+                            if ($existingUser->name !== $name) { $existingUser->name = $name; $changed = true; }
+                            if ($phone && $existingUser->phone !== $phone) { $existingUser->phone = $phone; $changed = true; }
+                            if ($changed) { $existingUser->save(); $updated++; }
+
+                            if ($cust && $code && $cust->external_cucode !== $code) {
+                                $cust->external_cucode = $code;
+                                $cust->save();
+                            }
+                        }
+                    } else {
+                        $userRowsToInsert[] = [
+                            'email' => $rawEmail,
+                            'name'  => $name,
+                            'phone' => $phone,
+                            'code'  => $code,
+                        ];
+                        $usedPlaceholders[$rawEmail] = true;
+                    }
                 }
+            }
+
+            if ($hasReal) {
                 continue;
             }
 
