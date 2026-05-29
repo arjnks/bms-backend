@@ -104,3 +104,5 @@ Route::get('/setup-seed', function () {
         return response()->json(['error' => $e->getMessage()]);
     }
 });
+
+Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
