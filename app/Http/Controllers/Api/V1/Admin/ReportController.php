@@ -12,16 +12,17 @@ class ReportController extends Controller
     public function aging(Request $request)
     {
         $today = Carbon::today()->toDateString();
+        $todayStr = "'" . $today . "'";
         
         $stats = \Illuminate\Support\Facades\DB::table('bills')
             ->selectRaw("
-                SUM(CASE WHEN DATEDIFF(?, due_date) <= 30 THEN 1 ELSE 0 END) as count_0_30,
-                SUM(CASE WHEN DATEDIFF(?, due_date) <= 30 THEN grand_total ELSE 0 END) as total_0_30,
-                SUM(CASE WHEN DATEDIFF(?, due_date) > 30 AND DATEDIFF(?, due_date) <= 60 THEN 1 ELSE 0 END) as count_31_60,
-                SUM(CASE WHEN DATEDIFF(?, due_date) > 30 AND DATEDIFF(?, due_date) <= 60 THEN grand_total ELSE 0 END) as total_31_60,
-                SUM(CASE WHEN DATEDIFF(?, due_date) > 60 THEN 1 ELSE 0 END) as count_60_plus,
-                SUM(CASE WHEN DATEDIFF(?, due_date) > 60 THEN grand_total ELSE 0 END) as total_60_plus
-            ", [$today, $today, $today, $today, $today, $today])
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) <= 30 THEN 1 ELSE 0 END) as count_0_30,
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) <= 30 THEN grand_total ELSE 0 END) as total_0_30,
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 30 AND DATEDIFF($todayStr, due_date) <= 60 THEN 1 ELSE 0 END) as count_31_60,
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 30 AND DATEDIFF($todayStr, due_date) <= 60 THEN grand_total ELSE 0 END) as total_31_60,
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 60 THEN 1 ELSE 0 END) as count_60_plus,
+                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 60 THEN grand_total ELSE 0 END) as total_60_plus
+            ")
             ->whereIn('payment_status', ['unpaid', 'proof_rejected'])
             ->where('due_date', '<', $today)
             ->first();
