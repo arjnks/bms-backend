@@ -11,32 +11,26 @@ class ReportController extends Controller
 {
     public function aging(Request $request)
     {
-        $bills = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->where('due_date', '<', Carbon::today())
-            ->get(['due_date', 'grand_total']);
+        $today = Carbon::today()->toDateString();
+        
+        $stats = \Illuminate\Support\Facades\DB::table('bills')
+            ->selectRaw("
+                SUM(CASE WHEN DATEDIFF(?, due_date) <= 30 THEN 1 ELSE 0 END) as count_0_30,
+                SUM(CASE WHEN DATEDIFF(?, due_date) <= 30 THEN grand_total ELSE 0 END) as total_0_30,
+                SUM(CASE WHEN DATEDIFF(?, due_date) > 30 AND DATEDIFF(?, due_date) <= 60 THEN 1 ELSE 0 END) as count_31_60,
+                SUM(CASE WHEN DATEDIFF(?, due_date) > 30 AND DATEDIFF(?, due_date) <= 60 THEN grand_total ELSE 0 END) as total_31_60,
+                SUM(CASE WHEN DATEDIFF(?, due_date) > 60 THEN 1 ELSE 0 END) as count_60_plus,
+                SUM(CASE WHEN DATEDIFF(?, due_date) > 60 THEN grand_total ELSE 0 END) as total_60_plus
+            ", [$today, $today, $today, $today, $today, $today])
+            ->whereIn('payment_status', ['unpaid', 'proof_rejected'])
+            ->where('due_date', '<', $today)
+            ->first();
 
-        $buckets = [
-            '0_30_days' => ['count' => 0, 'total_amount' => 0],
-            '31_60_days' => ['count' => 0, 'total_amount' => 0],
-            '60_plus_days' => ['count' => 0, 'total_amount' => 0],
-        ];
-
-        foreach ($bills as $bill) {
-            $days = Carbon::parse($bill->due_date)->diffInDays(Carbon::today());
-            
-            if ($days <= 30) {
-                $buckets['0_30_days']['count']++;
-                $buckets['0_30_days']['total_amount'] += (float) $bill->grand_total;
-            } elseif ($days <= 60) {
-                $buckets['31_60_days']['count']++;
-                $buckets['31_60_days']['total_amount'] += (float) $bill->grand_total;
-            } else {
-                $buckets['60_plus_days']['count']++;
-                $buckets['60_plus_days']['total_amount'] += (float) $bill->grand_total;
-            }
-        }
-
-        return response()->json($buckets);
+        return response()->json([
+            '0_30_days' => ['count' => (int)($stats->count_0_30 ?? 0), 'total_amount' => (float)($stats->total_0_30 ?? 0)],
+            '31_60_days' => ['count' => (int)($stats->count_31_60 ?? 0), 'total_amount' => (float)($stats->total_31_60 ?? 0)],
+            '60_plus_days' => ['count' => (int)($stats->count_60_plus ?? 0), 'total_amount' => (float)($stats->total_60_plus ?? 0)],
+        ]);
     }
 
     public function collections(Request $request)
