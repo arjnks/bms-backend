@@ -27,7 +27,7 @@ class ExternalBillingService
     public function getCustomers(): array
     {
         try {
-            $response = Http::timeout(10)
+            $response = Http::timeout(60)
                 ->get("{$this->baseUrl}/API/announcements/customer_details.php");
 
             if ($response->successful()) {

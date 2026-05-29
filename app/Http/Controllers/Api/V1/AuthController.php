@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Models\LoginLog;
 
 class AuthController extends Controller
 {
@@ -49,12 +50,31 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
+            LoginLog::create([
+                'email' => $request->email,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'status' => 'failed',
+            ]);
             return response()->json(['message' => 'Invalid username or password'], 401);
         }
 
         if ($user->status !== 'active') {
+            LoginLog::create([
+                'email' => $request->email,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'status' => 'failed',
+            ]);
             return response()->json(['message' => 'Your account is awaiting admin approval'], 403);
         }
+
+        LoginLog::create([
+            'email' => $request->email,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'status' => 'success',
+        ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 

@@ -43,13 +43,28 @@ class SyncController extends Controller
             ], 502);
         }
 
-        // Build a map: lowercase_email → nameplace
+        // Build a map: lowercase_email → data
+        // Customers without a valid email get a placeholder so they are still imported.
+        // Placeholder format: cucode@noemail.leo — admin can update the real email later.
         $erpMap = [];
         foreach ($erpCustomers as $c) {
-            $email = strtolower(trim($c['EMAIL'] ?? ''));
-            if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $erpMap[$email] = trim($c['NAMEPLACE'] ?? '');
+            $rawEmail = strtolower(trim($c['EMAIL'] ?? ''));
+            $code     = trim($c['code'] ?? '');
+
+            if ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL)) {
+                $email = $rawEmail;
+            } else {
+                // Generate a deterministic placeholder from the customer code
+                $slug  = preg_replace('/[^a-z0-9]/', '', strtolower($code)) ?: substr(md5($c['NAMEPLACE'] ?? ''), 0, 8);
+                $email = $slug . '@noemail.leo';
             }
+
+            $erpMap[$email] = [
+                'name'          => trim($c['NAMEPLACE'] ?? 'Unknown Customer'),
+                'code'          => $code,
+                'phone'         => trim($c['WHATSAPPNO'] ?? ''),
+                'has_real_email'=> ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL)),
+            ];
         }
 
         $erpEmails  = array_keys($erpMap);
@@ -71,8 +86,9 @@ class SyncController extends Controller
             $userRows = [];
             foreach ($newEmails as $email) {
                 $userRows[] = [
-                    'name'       => $erpMap[$email],
+                    'name'       => $erpMap[$email]['name'],
                     'email'      => $email,
+                    'phone'      => $erpMap[$email]['phone'] ?: null,
                     'username'   => 'user-' . substr(md5($email), 0, 8),
                     'password'   => Hash::make(Str::random(16)),
                     'role'       => 'customer',
@@ -84,7 +100,7 @@ class SyncController extends Controller
 
             // Insert in chunks of 200 to avoid query size limits
             foreach (array_chunk($userRows, 200) as $chunk) {
-                DB::table('users')->insert($chunk);
+                DB::table('users')->insertOrIgnore($chunk);
             }
             $created = count($newEmails);
         }
@@ -100,23 +116,53 @@ class SyncController extends Controller
             $customerRows = $newUsers->map(fn($u) => [
                 'user_id'               => $u->id,
                 'customer_code'         => 'ERP-' . strtoupper(Str::random(6)),
+                'external_cucode'       => $erpMap[strtolower($u->email)]['code'] ?? null,
                 'preferred_bill_format' => 'excel',
                 'created_at'            => $now,
                 'updated_at'            => $now,
             ])->all();
 
             foreach (array_chunk($customerRows, 200) as $chunk) {
-                DB::table('customers')->insert($chunk);
+                DB::table('customers')->insertOrIgnore($chunk);
             }
         }
 
-        // ── Step 4: update names of existing users if changed ──────────────
+
+        // ── Step 4: update names and cucodes of existing users ──────────────
         $updated = 0;
-        foreach ($existingUsers as $email => $user) {
-            $newName = $erpMap[$email] ?? null;
-            if ($newName && $user->name !== $newName) {
-                User::where('id', $user->id)->update(['name' => $newName, 'updated_at' => $now]);
-                $updated++;
+        $existingCustomers = \App\Models\Customer::with('user')->get();
+        foreach ($existingCustomers as $cust) {
+            if (!$cust->user) continue;
+            $email = strtolower($cust->user->email);
+            $erpData = $erpMap[$email] ?? null;
+            if ($erpData) {
+                $changed = false;
+                if ($cust->user->name !== $erpData['name']) {
+                    $cust->user->name = $erpData['name'];
+                    $changed = true;
+                }
+                if ($erpData['phone'] && $cust->user->phone !== $erpData['phone']) {
+                    $cust->user->phone = $erpData['phone'];
+                    $changed = true;
+                }
+                if ($changed) {
+                    $cust->user->updated_at = $now;
+                    $cust->user->save();
+                }
+                
+                $custChanged = false;
+                if ($cust->external_cucode !== $erpData['code']) {
+                    $cust->external_cucode = $erpData['code'];
+                    $custChanged = true;
+                }
+                if ($custChanged) {
+                    $cust->updated_at = $now;
+                    $cust->save();
+                }
+                
+                if ($changed || $custChanged) {
+                    $updated++;
+                }
             }
         }
 
@@ -131,11 +177,12 @@ class SyncController extends Controller
             $orphanRows = $orphans->map(fn($u) => [
                 'user_id'               => $u->id,
                 'customer_code'         => 'ERP-' . strtoupper(Str::random(6)),
+                'external_cucode'       => $erpMap[strtolower($u->email)]['code'] ?? null,
                 'preferred_bill_format' => 'excel',
                 'created_at'            => $now,
                 'updated_at'            => $now,
             ])->all();
-            DB::table('customers')->insert($orphanRows);
+            DB::table('customers')->insertOrIgnore($orphanRows);
         }
 
         return response()->json([

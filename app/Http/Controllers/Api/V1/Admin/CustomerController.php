@@ -32,15 +32,16 @@ class CustomerController extends Controller
                 $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
             }], 'due_date')
             ->withMax('reminderLogs as last_reminder_sent', 'sent_at')
-            ->paginate(15);
+            ->get();
             
-        $customers->getCollection()->transform(function ($customer) {
+        $customers = $customers->map(function ($customer) {
             return [
                 'id' => $customer->id,
                 'customer_code' => $customer->customer_code,
-                'name' => $customer->user->name,
-                'email' => $customer->user->email,
-                'phone' => $customer->user->phone,
+                'external_cucode' => $customer->external_cucode,
+                'name' => $customer->user->name ?? 'Unknown',
+                'email' => $customer->user->email ?? 'N/A',
+                'phone' => $customer->user->phone ?? 'N/A',
                 'preferred_bill_format' => $customer->preferred_bill_format,
                 'outstanding_amount' => $customer->outstanding_amount ?? 0,
                 'nearest_due_date' => $customer->nearest_due_date,

@@ -50,6 +50,10 @@ class BillController extends Controller
     {
         $query = Bill::with('customer.user:id,name');
 
+        if ($request->customer_id) {
+            $query->where('customer_id', $request->customer_id);
+        }
+
         // Allow filtering by payment_status (used by PaymentVerifications page)
         if ($request->filled('payment_status')) {
             $query->where('payment_status', $request->payment_status);
