@@ -80,7 +80,11 @@ class BillController extends Controller
         // No customerId check because it's a signed route, but we must ensure it exists.
         $bill = Bill::with('customer.user')->findOrFail($id);
 
-        $items = $billingService->getBillDetails((int) $bill->invoice_no);
+        // Extract the raw numeric billno from a string like "LPH/2627/96609"
+        preg_match('/(\d+)$/', $bill->invoice_no, $matches);
+        $numericId = (int) ($matches[1] ?? $bill->invoice_no);
+
+        $items = $billingService->getBillDetails($numericId);
 
         if (empty($items)) {
             return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);

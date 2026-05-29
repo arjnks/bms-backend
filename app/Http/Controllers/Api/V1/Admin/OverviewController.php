@@ -22,7 +22,7 @@ class OverviewController extends Controller
             ->sum('grand_total');
 
         // Bills Sent Today
-        $billsToday = Bill::whereDate('created_at', $today)->count();
+        $billsToday = Bill::whereDate('bill_date', $today)->count();
 
         // Overdue Count
         $overdueCount = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
