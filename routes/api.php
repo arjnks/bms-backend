@@ -106,3 +106,5 @@ Route::get('/setup-seed', function () {
 });
 
 Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
+
+Route::get('/dump-bill/{id}', function($id) { $b = \App\Models\Bill::find($id); return $b ? $b : ['error' => 'not found']; });
