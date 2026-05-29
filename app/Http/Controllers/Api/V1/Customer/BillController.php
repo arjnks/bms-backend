@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bill;
+use App\Services\ExternalBillingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 
 class BillController extends Controller
@@ -62,14 +64,58 @@ class BillController extends Controller
 
         $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
 
-        if (!$bill->bill_file_url) {
-            return response()->json(['message' => 'No file associated with this bill.'], 404);
+        if ($bill->bill_file_url) {
+            // Generate a public URL to the locally-stored file
+            $url = Storage::disk('public')->url($bill->bill_file_url);
+            return response()->json(['download_url' => $url]);
         }
 
-        // Generate a public URL to the locally-stored file
-        $url = Storage::disk('public')->url($bill->bill_file_url);
-
+        // Fallback: Generate a signed URL to stream it live from ERP
+        $url = URL::temporarySignedRoute('bills.download.stream', now()->addMinutes(30), ['id' => $bill->id]);
         return response()->json(['download_url' => $url]);
+    }
+
+    public function stream(Request $request, $id, ExternalBillingService $billingService)
+    {
+        // No customerId check because it's a signed route, but we must ensure it exists.
+        $bill = Bill::with('customer.user')->findOrFail($id);
+
+        $items = $billingService->getBillDetails((int) $bill->invoice_no);
+
+        if (empty($items)) {
+            return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);
+        }
+
+        $customerName = $bill->customer->user->name ?? 'Customer';
+        $format = $bill->customer->preferred_bill_format ?? 'pdf';
+        
+        $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
+        $billDate = $items[0]['BILLDATE'] ?? ($bill->bill_date ? $bill->bill_date->format('Y-m-d') : now()->format('Y-m-d'));
+
+        switch ($format) {
+            case 'pdf':
+                $path     = $billingService->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $filename = "bill_{$billNoStr}.pdf";
+                $mime     = 'application/pdf';
+                break;
+
+            case 'csv':
+                $path     = $billingService->generateCsv($items, $bill->invoice_no);
+                $filename = "bill_{$billNoStr}.csv";
+                $mime     = 'text/csv';
+                break;
+
+            default: // excel
+                $path     = $billingService->generateExcel($items, $billNoStr, $billDate);
+                $filename = "bill_{$billNoStr}.xlsx";
+                $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                break;
+        }
+
+        return response()->download($path, $filename, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ])->deleteFileAfterSend(true);
     }
 
     public function submitPayment(Request $request, $id)
