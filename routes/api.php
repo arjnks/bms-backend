@@ -13,13 +13,6 @@ use App\Http\Controllers\Api\V1\Customer\PreferenceController as CustomerPrefere
 use App\Http\Controllers\Api\V1\Customer\ExternalBillController;
 use App\Http\Controllers\Api\V1\Admin\SyncController;
 
-Route::get('/fix-dates', function() {
-    \App\Models\Bill::whereDate('bill_date', today())
-        ->whereDate('created_at', '<', today())
-        ->update(['bill_date' => \DB::raw('DATE(created_at)')]);
-    return response()->json(['message' => 'Fixed corrupted dates']);
-});
-
 Route::prefix('v1')->group(function () {
     // Auth Routes
     Route::post('/auth/login', [AuthController::class, 'login']);
