@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Models\ReminderLog;
 use App\Services\WhatsAppService;
+use App\Services\ExternalBillingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -214,5 +215,87 @@ class CustomerController extends Controller
         }
 
         return response()->json(['message' => "Bulk reminders dispatched to {$count} customers"]);
+    }
+
+    public function externalBills(Request $request, $id, ExternalBillingService $billing)
+    {
+        $customer = Customer::findOrFail($id);
+        if (!$customer->external_cucode) {
+            return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
+        }
+
+        $request->validate([
+            'from_date' => 'required|date_format:Y-m-d',
+            'to_date'   => 'required|date_format:Y-m-d|after_or_equal:from_date',
+        ]);
+
+        $bills = $billing->getBills($customer->external_cucode, $request->from_date, $request->to_date);
+        usort($bills, fn($a, $b) => strcmp($b['DATE'] ?? '', $a['DATE'] ?? ''));
+
+        return response()->json([
+            'status' => 'success',
+            'count'  => count($bills),
+            'data'   => $bills,
+        ]);
+    }
+
+    public function externalBillDetails(Request $request, $id, $billno, ExternalBillingService $billing)
+    {
+        $customer = Customer::findOrFail($id);
+        if (!$customer->external_cucode) {
+            return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
+        }
+
+        $items = $billing->getBillDetails((int) $billno);
+
+        if (empty($items)) {
+            return response()->json(['status' => 'error', 'message' => 'Bill not found or no items.'], 404);
+        }
+
+        // Verify that this bill actually belongs to this customer
+        if (($items[0]['cucode'] ?? '') !== $customer->external_cucode) {
+            return response()->json(['status' => 'error', 'message' => 'Bill does not belong to this customer.'], 403);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'count'  => count($items),
+            'data'   => $items,
+            'summary' => [
+                'bill_no'    => $items[0]['BILLNO'] ?? '',
+                'bill_date'  => $items[0]['BILLDATE'] ?? '',
+                'net_amount' => $items[0]['NETAMOUNT'] ?? 0,
+            ],
+        ]);
+    }
+
+    public function downloadExternalBill(Request $request, $id, $billno, ExternalBillingService $billing)
+    {
+        $customer = Customer::with('user')->findOrFail($id);
+        if (!$customer->external_cucode) {
+            return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
+        }
+
+        $items = $billing->getBillDetails((int) $billno);
+
+        if (empty($items)) {
+            return response()->json(['message' => 'Bill not found.'], 404);
+        }
+
+        if (($items[0]['cucode'] ?? '') !== $customer->external_cucode) {
+            return response()->json(['message' => 'Bill does not belong to this customer.'], 403);
+        }
+
+        $billNoStr    = $items[0]['BILLNO'] ?? (string) $billno;
+        $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
+        $customerName = $customer->user->name ?? 'Customer';
+
+        $path     = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+        $filename = "bill_{$billno}.pdf";
+
+        return response()->download($path, $filename, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ])->deleteFileAfterSend(true);
     }
 }

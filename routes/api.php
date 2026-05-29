@@ -40,6 +40,11 @@ Route::prefix('v1')->group(function () {
             Route::post('/customers/{id}/remind', [AdminCustomerController::class, 'remind']);
             Route::post('/remind/bulk', [AdminCustomerController::class, 'bulkRemind']);
             
+            // Customer External Bills
+            Route::get('/customers/{id}/external-bills', [AdminCustomerController::class, 'externalBills']);
+            Route::get('/customers/{id}/external-bills/{billno}', [AdminCustomerController::class, 'externalBillDetails']);
+            Route::get('/customers/{id}/external-bills/{billno}/download', [AdminCustomerController::class, 'downloadExternalBill']);
+            
             // Security Logs
             Route::get('/login-logs', [\App\Http\Controllers\Api\V1\Admin\LoginLogController::class, 'index']);
             
