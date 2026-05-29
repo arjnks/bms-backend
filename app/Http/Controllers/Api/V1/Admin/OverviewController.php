@@ -16,8 +16,9 @@ class OverviewController extends Controller
         $today = Carbon::today();
         $thisMonth = Carbon::now()->startOfMonth();
 
-        // Total Outstanding
+        // Dues This Month
         $totalOutstanding = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
+            ->where('bill_date', '>=', $thisMonth)
             ->sum('grand_total');
 
         // Bills Sent Today
