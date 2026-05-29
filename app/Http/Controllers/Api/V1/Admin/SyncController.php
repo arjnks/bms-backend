@@ -21,18 +21,18 @@ class SyncController extends Controller
     }
 
     /**
-     * Sync all customers from the external billing API into BMS.
+     * Sync ALL customers from the external billing API into BMS.
      * POST /admin/sync/customers
      *
-     * - Matches by email (case-insensitive)
-     * - Creates account if email not found
-     * - Updates name if email exists but name differs
-     * - Never touches passwords of existing accounts
+     * Zero customers are skipped regardless of missing email/phone.
+     * Match strategy:
+     *   A) Has real email  → match/create by email
+     *   B) No email, has code → match by external_cucode; create if new
+     *   C) No email, no code  → create with guaranteed-unique placeholder email
      */
     public function syncCustomers(Request $request)
     {
-        // Increase timeout for large syncs
-        set_time_limit(120);
+        set_time_limit(300);
 
         $erpCustomers = $this->billing->getCustomers();
 
@@ -43,53 +43,106 @@ class SyncController extends Controller
             ], 502);
         }
 
-        // Build a map: lowercase_email → data
-        // Customers without a valid email get a placeholder so they are still imported.
-        // Placeholder format: cucode@noemail.leo — admin can update the real email later.
-        $erpMap = [];
-        foreach ($erpCustomers as $c) {
-            $rawEmail = strtolower(trim($c['EMAIL'] ?? ''));
-            $code     = trim($c['code'] ?? '');
+        $now     = now();
+        $created = 0;
+        $updated = 0;
 
-            if ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL)) {
-                $email = $rawEmail;
-            } else {
-                // Generate a deterministic placeholder from the customer code
-                $slug  = preg_replace('/[^a-z0-9]/', '', strtolower($code)) ?: substr(md5($c['NAMEPLACE'] ?? ''), 0, 8);
-                $email = $slug . '@noemail.leo';
-            }
-
-            $erpMap[$email] = [
-                'name'          => trim($c['NAMEPLACE'] ?? 'Unknown Customer'),
-                'code'          => $code,
-                'phone'         => trim($c['WHATSAPPNO'] ?? ''),
-                'has_real_email'=> ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL)),
-            ];
-        }
-
-        $erpEmails  = array_keys($erpMap);
-        $now        = now();
-
-        // ── Step 1: find which emails already exist in BMS ─────────────────
-        $existingUsers = User::whereIn(DB::raw('LOWER(email)'), $erpEmails)
-            ->where('role', 'customer')
-            ->select(['id', 'email', 'name'])
+        // Pre-load existing BMS data for fast in-memory lookups
+        $usersByEmail = User::where('role', 'customer')
+            ->select(['id', 'email', 'name', 'phone'])
             ->get()
             ->keyBy(fn($u) => strtolower($u->email));
 
-        $existingEmails = $existingUsers->keys()->all();
-        $newEmails      = array_diff($erpEmails, $existingEmails);
+        $customersByCode = Customer::whereNotNull('external_cucode')
+            ->select(['id', 'user_id', 'external_cucode'])
+            ->get()
+            ->keyBy('external_cucode');
 
-        // ── Step 2: bulk-insert new users ──────────────────────────────────
-        $created = 0;
-        if (!empty($newEmails)) {
-            $userRows = [];
-            foreach ($newEmails as $email) {
-                $userRows[] = [
-                    'name'       => $erpMap[$email]['name'],
-                    'email'      => $email,
-                    'phone'      => $erpMap[$email]['phone'] ?: null,
-                    'username'   => 'user-' . substr(md5($email), 0, 8),
+        // Track placeholder emails used this run to avoid collisions
+        $usedPlaceholders = $usersByEmail->keys()->flip()->all();
+
+        $userRowsToInsert = [];
+
+        foreach ($erpCustomers as $idx => $c) {
+            $rawEmail = strtolower(trim($c['EMAIL'] ?? ''));
+            $code     = trim($c['code'] ?? '');
+            $name     = trim($c['NAMEPLACE'] ?? 'Unknown Customer');
+            $phone    = trim($c['WHATSAPPNO'] ?? '') ?: null;
+            $hasReal  = ($rawEmail && filter_var($rawEmail, FILTER_VALIDATE_EMAIL));
+
+            // ── Strategy A: has a real email ─────────────────────────────────
+            if ($hasReal) {
+                $existingUser = $usersByEmail[$rawEmail] ?? null;
+
+                if ($existingUser) {
+                    $changed = false;
+                    if ($existingUser->name !== $name) { $existingUser->name = $name; $changed = true; }
+                    if ($phone && $existingUser->phone !== $phone) { $existingUser->phone = $phone; $changed = true; }
+                    if ($changed) { $existingUser->save(); $updated++; }
+
+                    // Sync cucode on existing Customer record
+                    $cust = $customersByCode[$code] ?? Customer::where('user_id', $existingUser->id)->first();
+                    if ($cust && $code && $cust->external_cucode !== $code) {
+                        $cust->external_cucode = $code;
+                        $cust->save();
+                    }
+                } else {
+                    $userRowsToInsert[] = [
+                        'email' => $rawEmail,
+                        'name'  => $name,
+                        'phone' => $phone,
+                        'code'  => $code,
+                    ];
+                    $usedPlaceholders[$rawEmail] = true;
+                }
+                continue;
+            }
+
+            // ── Strategy B: no email, has code — match by cucode ─────────────
+            if ($code) {
+                $existingCust = $customersByCode[$code] ?? null;
+
+                if ($existingCust) {
+                    $user = User::find($existingCust->user_id);
+                    if ($user) {
+                        $changed = false;
+                        if ($user->name !== $name) { $user->name = $name; $changed = true; }
+                        if ($phone && $user->phone !== $phone) { $user->phone = $phone; $changed = true; }
+                        if ($changed) { $user->save(); $updated++; }
+                    }
+                    continue;
+                }
+            }
+
+            // ── Strategy C: new customer with no email / new code ─────────────
+            $slug = $code ? preg_replace('/[^a-z0-9]/', '', strtolower($code)) : '';
+            $candidate = ($slug ?: 'cust' . $idx) . '@noemail.leo';
+            // Guarantee uniqueness even if slug collides
+            if (isset($usedPlaceholders[$candidate])) {
+                $candidate = ($slug ?: 'cust') . $idx . '@noemail.leo';
+            }
+
+            $usedPlaceholders[$candidate] = true;
+            $userRowsToInsert[] = [
+                'email' => $candidate,
+                'name'  => $name,
+                'phone' => $phone,
+                'code'  => $code,
+            ];
+        }
+
+        // ── Bulk insert new users then create Customer records ────────────────
+        if (!empty($userRowsToInsert)) {
+            $codeMap = [];
+            $dbRows  = [];
+
+            foreach ($userRowsToInsert as $r) {
+                $codeMap[$r['email']] = $r['code'];
+                $dbRows[] = [
+                    'name'       => $r['name'],
+                    'email'      => $r['email'],
+                    'phone'      => $r['phone'],
+                    'username'   => 'user-' . substr(md5($r['email']), 0, 8),
                     'password'   => Hash::make(Str::random(16)),
                     'role'       => 'customer',
                     'status'     => 'active',
@@ -98,100 +151,45 @@ class SyncController extends Controller
                 ];
             }
 
-            // Insert in chunks of 200 to avoid query size limits
-            foreach (array_chunk($userRows, 200) as $chunk) {
+            foreach (array_chunk($dbRows, 200) as $chunk) {
                 DB::table('users')->insertOrIgnore($chunk);
             }
-            $created = count($newEmails);
-        }
 
-        // ── Step 3: create Customer records for newly inserted users ───────
-        $newUsers = User::whereIn(DB::raw('LOWER(email)'), $newEmails)
-            ->where('role', 'customer')
-            ->doesntHave('customer')
-            ->select('id')
-            ->get();
+            // Fetch the freshly inserted users and create Customer records
+            $newEmails = array_keys($codeMap);
+            $newUsers  = User::whereIn(DB::raw('LOWER(email)'), $newEmails)
+                ->where('role', 'customer')
+                ->doesntHave('customer')
+                ->select('id', 'email')
+                ->get();
 
-        if ($newUsers->isNotEmpty()) {
-            $customerRows = $newUsers->map(fn($u) => [
-                'user_id'               => $u->id,
-                'customer_code'         => 'ERP-' . strtoupper(Str::random(6)),
-                'external_cucode'       => $erpMap[strtolower($u->email)]['code'] ?? null,
-                'preferred_bill_format' => 'excel',
-                'created_at'            => $now,
-                'updated_at'            => $now,
-            ])->all();
+            if ($newUsers->isNotEmpty()) {
+                $custRows = $newUsers->map(fn($u) => [
+                    'user_id'               => $u->id,
+                    'customer_code'         => 'ERP-' . strtoupper(Str::random(6)),
+                    'external_cucode'       => $codeMap[strtolower($u->email)] ?: null,
+                    'preferred_bill_format' => 'excel',
+                    'created_at'            => $now,
+                    'updated_at'            => $now,
+                ])->all();
 
-            foreach (array_chunk($customerRows, 200) as $chunk) {
-                DB::table('customers')->insertOrIgnore($chunk);
+                foreach (array_chunk($custRows, 200) as $chunk) {
+                    DB::table('customers')->insertOrIgnore($chunk);
+                }
+
+                $created = $newUsers->count();
             }
         }
 
-
-        // ── Step 4: update names and cucodes of existing users ──────────────
-        $updated = 0;
-        $existingCustomers = \App\Models\Customer::with('user')->get();
-        foreach ($existingCustomers as $cust) {
-            if (!$cust->user) continue;
-            $email = strtolower($cust->user->email);
-            $erpData = $erpMap[$email] ?? null;
-            if ($erpData) {
-                $changed = false;
-                if ($cust->user->name !== $erpData['name']) {
-                    $cust->user->name = $erpData['name'];
-                    $changed = true;
-                }
-                if ($erpData['phone'] && $cust->user->phone !== $erpData['phone']) {
-                    $cust->user->phone = $erpData['phone'];
-                    $changed = true;
-                }
-                if ($changed) {
-                    $cust->user->updated_at = $now;
-                    $cust->user->save();
-                }
-                
-                $custChanged = false;
-                if ($cust->external_cucode !== $erpData['code']) {
-                    $cust->external_cucode = $erpData['code'];
-                    $custChanged = true;
-                }
-                if ($custChanged) {
-                    $cust->updated_at = $now;
-                    $cust->save();
-                }
-                
-                if ($changed || $custChanged) {
-                    $updated++;
-                }
-            }
-        }
-
-        // ── Step 5: ensure existing users without a Customer record get one ─
-        $orphans = User::whereIn(DB::raw('LOWER(email)'), $existingEmails)
-            ->where('role', 'customer')
-            ->doesntHave('customer')
-            ->select('id')
-            ->get();
-
-        if ($orphans->isNotEmpty()) {
-            $orphanRows = $orphans->map(fn($u) => [
-                'user_id'               => $u->id,
-                'customer_code'         => 'ERP-' . strtoupper(Str::random(6)),
-                'external_cucode'       => $erpMap[strtolower($u->email)]['code'] ?? null,
-                'preferred_bill_format' => 'excel',
-                'created_at'            => $now,
-                'updated_at'            => $now,
-            ])->all();
-            DB::table('customers')->insertOrIgnore($orphanRows);
-        }
+        $totalInBms = Customer::count();
 
         return response()->json([
-            'status'  => 'success',
-            'total'   => count($erpEmails),
-            'created' => $created,
-            'updated' => $updated,
-            'skipped' => count($erpCustomers) - count($erpEmails),
-            'message' => "Sync complete. {$created} new accounts created, {$updated} updated.",
+            'status'    => 'success',
+            'erp_total' => count($erpCustomers),
+            'bms_total' => $totalInBms,
+            'created'   => $created,
+            'updated'   => $updated,
+            'message'   => "Sync complete. {$created} new, {$updated} updated. Total in BMS: {$totalInBms}.",
         ]);
     }
 
@@ -202,7 +200,7 @@ class SyncController extends Controller
      */
     public function status()
     {
-        $bmsCount = User::where('role', 'customer')->count();
+        $bmsCount    = User::where('role', 'customer')->count();
         $linkedCount = Customer::whereNotNull('external_cucode')->count();
 
         return response()->json([
