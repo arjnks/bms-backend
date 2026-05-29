@@ -59,6 +59,10 @@ class BillController extends Controller
             $query->where('payment_status', $request->payment_status);
         }
 
+        if ($request->filled('is_overdue') && $request->is_overdue) {
+            $query->where('due_date', '<', Carbon::today())->whereIn('payment_status', ['unpaid', 'proof_rejected']);
+        }
+
         $bills = $query->orderBy('created_at', 'desc')->paginate(15);
 
         $bills->getCollection()->transform(function ($bill) {

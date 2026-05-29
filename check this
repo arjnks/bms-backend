@@ -1,0 +1,422 @@
+Here's the full detailed brief — paste this into any LLM to cross-check:
+
+---
+
+> ## Leo Group Bill Management System — Full Project Brief
+>
+> ### What This Is
+> A full-stack web application for **Leo Group**, a pharma distribution company based in Thrissur, Kerala, India. They currently send 1500+ bills daily via WhatsApp which causes their number to get blocked. This system replaces that with a secure web portal where customers log in and download their own bills.
+>
+> ---
+>
+> ### Business Problem Being Solved
+> - 1500+ bills sent via WhatsApp daily → number gets blocked repeatedly
+> - No way to track who has paid and who hasn't
+> - Manual follow-up for outstanding payments
+> - No audit trail of bill delivery
+> - Customers lose bills in WhatsApp chat history
+>
+> ### Solution
+> - Customers get a portal login to access and download their own bills anytime
+> - WhatsApp only sends a short notification link — never the file itself
+> - Automated payment reminders fire based on configurable rules
+> - Customers submit payment proof (GPay/NEFT screenshot + UTR) through the portal
+> - Admin verifies proof and marks bills as paid
+> - Full audit trail of everything
+>
+> ---
+>
+> ### Tech Stack — Final Decisions
+>
+> | Layer | Technology |
+> |---|---|
+> | Frontend | Vite + React 18 + React Router DOM |
+> | Styling | Vanilla CSS with design tokens — no Tailwind |
+> | Charts | Recharts |
+> | HTTP client | Axios with bearer token interceptor |
+> | Backend | Laravel 11 (API only — returns JSON) |
+> | Auth | Laravel Sanctum (token-based) |
+> | Database | MySQL |
+> | Queue | Laravel Queues + Redis |
+> | Scheduler | Laravel Scheduler (cron) |
+> | File storage | Cloudflare R2 (S3-compatible) |
+> | PDF generation | barryvdh/laravel-dompdf |
+> | Notifications | Meta WhatsApp Cloud API (direct — no third party) |
+> | Hosting | Hostinger VPS |
+>
+> ---
+>
+> ### User Roles — Exactly 3
+>
+> | Role | Access |
+> |---|---|
+> | `admin` | Full dashboard — customers, bills, approvals, reminders, reports |
+> | `customer` | Customer portal — their own bills only |
+> | `marketing_company` | Customer portal — same as customer |
+>
+> - After login, backend returns the role
+> - Admin → redirected to `/dashboard`
+> - Customer and marketing_company → redirected to `/portal`
+> - Registration requires **admin approval** before the user can log in
+> - Pending users get HTTP 403 with message `"Your account is awaiting admin approval"` — not 401
+>
+> ---
+>
+> ### Bill Formats — Per Customer Preference
+> Every customer has one saved preferred format: **PDF**, **CSV**, or **Excel**.
+> - PDF — generated from a template using DomPDF, or admin uploads a pre-made PDF
+> - CSV — admin uploads a CSV file
+> - Excel — admin uploads .xls or .xlsx file
+> - All files stored on Cloudflare R2
+> - Download links are **signed URLs valid 15 minutes** — never public
+> - Customer portal shows exactly **one download button** per bill matching their preference
+> - Admin can change a customer's preferred format anytime from their profile page
+>
+> ---
+>
+> ### Payment Flow — No Payment Gateway
+> Customers pay externally via **GPay** or **NEFT** only.
+>
+> Full flow:
+> 1. Customer sees outstanding popup on login
+> 2. Clicks Pay Now → sees GPay UPI ID + QR code OR NEFT bank details
+> 3. Pays externally on their phone/bank
+> 4. Returns to portal → submits proof:
+>    - Payment method (GPay or NEFT)
+>    - Amount paid
+>    - UTR / Transaction ID
+>    - Date of payment
+>    - Screenshot upload
+> 5. Bill status → `payment_submitted` — popup disappears, reminders stop
+> 6. Admin reviews proof in Payment Verifications tab
+> 7. Admin clicks Verify → confirmation popup appears → on confirm → status → `paid` → WhatsApp sent to customer
+> 8. OR Admin clicks Reject → types reason → status → `proof_rejected` → WhatsApp sent with reason → customer sees banner to resubmit
+>
+> ---
+>
+> ### Reminder Engine
+> Automated rules that fire WhatsApp notifications based on bill due dates.
+>
+> Default rules:
+> - 3 days before due date → gentle reminder
+> - On due date → payment due alert
+> - 2 days after due date → escalation
+> - Weekly if still overdue → recurring nudge (off by default)
+>
+> Each rule is configurable:
+> - Trigger type: before_due / on_due / after_due / weekly_overdue
+> - Offset days
+> - Send time (default 9:00 AM)
+> - Channel: whatsapp or popup
+> - On/off toggle
+>
+> **Critical rule:** Before firing any reminder, check `payment_status`. If it is `payment_submitted` or `paid` — skip entirely.
+>
+> Portal popup also counts as a reminder channel — shown on customer login if outstanding amount exceeds the configured threshold.
+>
+> ---
+>
+> ### Database Schema — All 6 Tables
+>
+> **users**
+> ```
+> id, name, username, email, phone, password,
+> role ENUM(admin, customer, marketing_company),
+> status ENUM(active, pending, rejected),
+> timestamps
+> ```
+>
+> **customers**
+> ```
+> id, user_id (FK → users),
+> customer_code (unique, assigned by admin),
+> gstin (nullable),
+> credit_limit (decimal),
+> preferred_bill_format ENUM(csv, excel, pdf),
+> salesperson_id (nullable FK → users),
+> timestamps
+> ```
+>
+> **bills**
+> ```
+> id, customer_id (FK → customers),
+> invoice_no (unique), bill_date, due_date,
+> subtotal, gst_total, grand_total,
+> status ENUM(unpaid, overdue, paid),
+> payment_status ENUM(unpaid, payment_submitted, proof_rejected, paid),
+> payment_method ENUM(gpay, neft) nullable,
+> utr_number nullable,
+> proof_screenshot nullable,
+> payment_submitted_at nullable,
+> payment_verified_at nullable,
+> rejection_reason nullable,
+> bill_file_url nullable,
+> bill_file_type ENUM(csv, excel, pdf) nullable,
+> uploaded_by (nullable FK → users),
+> timestamps
+> ```
+>
+> **bill_line_items**
+> ```
+> id, bill_id (FK → bills),
+> product_name, hsn_code nullable,
+> qty, unit nullable, rate, gst_pct, line_total,
+> timestamps
+> ```
+>
+> **reminder_rules**
+> ```
+> id,
+> trigger_type ENUM(before_due, on_due, after_due, weekly_overdue),
+> offset_days, send_time,
+> channel ENUM(whatsapp, popup),
+> message_template nullable,
+> is_active boolean,
+> timestamps
+> ```
+>
+> **reminder_logs**
+> ```
+> id, bill_id (FK), customer_id (FK),
+> rule_id (nullable FK → reminder_rules),
+> channel ENUM(whatsapp, popup),
+> status ENUM(sent, failed),
+> sent_at nullable, error_msg nullable,
+> timestamps
+> ```
+>
+> ---
+>
+> ### All API Endpoints — 32 Total
+>
+> **Auth (public):**
+> ```
+> POST /api/v1/auth/login
+> POST /api/v1/auth/register
+> POST /api/v1/auth/logout     (auth required)
+> GET  /api/v1/auth/me         (auth required)
+> ```
+>
+> **Admin — requires auth + role:admin:**
+> ```
+> GET    /api/v1/admin/overview
+>
+> GET    /api/v1/admin/customers
+> POST   /api/v1/admin/customers
+> GET    /api/v1/admin/customers/{id}
+> PATCH  /api/v1/admin/customers/{id}
+> POST   /api/v1/admin/customers/{id}/remind
+> POST   /api/v1/admin/remind/bulk
+>
+> GET    /api/v1/admin/bills
+> POST   /api/v1/admin/bills
+> POST   /api/v1/admin/bills/{id}/mark-paid
+> POST   /api/v1/admin/bills/{id}/verify-payment
+> POST   /api/v1/admin/bills/{id}/reject-payment
+>
+> GET    /api/v1/admin/users/pending
+> POST   /api/v1/admin/users/{id}/approve
+> POST   /api/v1/admin/users/{id}/reject
+>
+> GET    /api/v1/admin/reminder-rules
+> POST   /api/v1/admin/reminder-rules
+> PATCH  /api/v1/admin/reminder-rules/{id}
+> DELETE /api/v1/admin/reminder-rules/{id}
+>
+> GET    /api/v1/admin/reports/aging
+> GET    /api/v1/admin/reports/collections
+> ```
+>
+> **Customer — requires auth + role:customer or marketing_company:**
+> ```
+> GET  /api/v1/customer/bills
+> GET  /api/v1/customer/bills/{id}
+> GET  /api/v1/customer/bills/{id}/download
+> POST /api/v1/customer/bills/{id}/submit-payment
+> ```
+>
+> ---
+>
+> ### Exact API Response Shapes
+>
+> **Login success:**
+> ```json
+> {
+>   "token": "1|abc...",
+>   "user": {
+>     "id": 1,
+>     "name": "Leo Admin",
+>     "role": "admin",
+>     "status": "active"
+>   }
+> }
+> ```
+>
+> **Login — pending user:**
+> ```json
+> HTTP 403
+> { "message": "Your account is awaiting admin approval" }
+> ```
+>
+> **Customer bills index:**
+> ```json
+> {
+>   "has_outstanding": true,
+>   "outstanding_amount": 18450.00,
+>   "bills": [
+>     {
+>       "id": 1,
+>       "invoice_no": "INV-2245",
+>       "bill_date": "2026-05-20",
+>       "due_date": "2026-05-31",
+>       "grand_total": 8200.00,
+>       "status": "unpaid",
+>       "payment_status": "unpaid",
+>       "bill_file_type": "excel"
+>     }
+>   ]
+> }
+> ```
+>
+> ---
+>
+> ### WhatsApp Notification Rules
+> - Use Meta WhatsApp Cloud API directly — no MSG91, no Gupshup
+> - Never send bill files over WhatsApp — text + link only
+> - All calls go through `App\Services\WhatsAppService` → `send(string $phone, string $message)`
+> - Never call Meta API directly from a controller
+>
+> ---
+>
+> ### Frontend Structure (Already Built)
+> ```
+> leo-bms/
+> ├── src/
+> │   ├── api/
+> │   │   ├── axios.js
+> │   │   ├── auth.js
+> │   │   ├── bills.js
+> │   │   ├── customers.js
+> │   │   ├── reminders.js
+> │   │   └── reports.js
+> │   ├── context/
+> │   │   └── AuthContext.jsx
+> │   ├── components/
+> │   │   ├── layout/ (AppShell, Navbar, Sidebar)
+> │   │   └── ui/ (Badge, Button, Card, KpiCard, Modal, Toast, Switch, Table, Spinner)
+> │   └── pages/
+> │       ├── Login.jsx
+> │       ├── admin/
+> │       │   ├── Overview.jsx
+> │       │   ├── Customers.jsx
+> │       │   ├── CustomerDetail.jsx
+> │       │   ├── BillUpload.jsx
+> │       │   ├── Reminders.jsx
+> │       │   ├── AddRule.jsx
+> │       │   └── Reports.jsx
+> │       └── customer/
+> │           ├── MyBills.jsx
+> │           ├── BillDetail.jsx
+> │           ├── Preferences.jsx
+> │           └── SubmitPayment.jsx
+> ```
+>
+> Frontend uses localStorage for mock data currently — all of this gets stripped in Phase 3 and replaced with real Axios API calls.
+>
+> ---
+>
+> ### Backend Structure (Built So Far)
+> ```
+> leo-bms-api/
+> ├── routes/api.php              ← all 32 endpoints mapped
+> ├── app/
+> │   ├── Http/
+> │   │   ├── Controllers/
+> │   │   │   ├── Auth/AuthController.php        ← done
+> │   │   │   ├── Admin/
+> │   │   │   │   ├── CustomerController.php     ← logic pending
+> │   │   │   │   ├── BillController.php         ← logic pending
+> │   │   │   │   ├── ReminderRuleController.php ← logic pending
+> │   │   │   │   ├── ReportController.php       ← logic pending
+> │   │   │   │   └── UserApprovalController.php ← logic pending
+> │   │   │   └── Customer/
+> │   │   │       └── BillController.php         ← logic pending
+> │   │   └── Middleware/
+> │   │       └── RoleMiddleware.php             ← done
+> │   ├── Models/
+> │   │   ├── User.php, Customer.php, Bill.php
+> │   │   ├── BillLineItem.php
+> │   │   ├── ReminderRule.php, ReminderLog.php
+> │   └── Services/
+> │       └── WhatsAppService.php               ← pending
+> └── database/
+>     ├── migrations/                           ← all 10 done, MySQL
+>     └── seeders/                              ← pending
+> ```
+>
+> ---
+>
+> ### What's Done
+> - ✅ React frontend fully built with mock data
+> - ✅ All 10 database migrations run on MySQL
+> - ✅ All routes mapped
+> - ✅ AuthController complete
+> - ✅ RoleMiddleware complete
+> - ✅ DomPDF installed
+> - ✅ MySQL configured
+>
+> ### What's In Progress Right Now
+> - 🔄 Controller logic for all 6 remaining controllers
+> - 🔄 WhatsAppService class
+> - 🔄 Cloudflare R2 configuration
+> - 🔄 Database seeder
+>
+> ### What's Coming Next (In Order)
+>
+> **Phase 2 — Finish backend (current):**
+> - Write all controller logic
+> - Build WhatsAppService
+> - Configure Cloudflare R2
+> - Build reminder scheduler + queue jobs
+> - Seed sample data
+> - Test all 32 endpoints in Postman
+>
+> **Phase 3 — Connect frontend to backend:**
+> - Strip all localStorage and mock data from React
+> - Configure Axios bearer token interceptor
+> - Wire every page to real API endpoints
+> - Handle loading states, errors, empty states
+> - Test full end-to-end flow
+>
+> **Phase 4 — Deploy to VPS:**
+> - Set up Nginx on Hostinger VPS
+> - Configure Supervisor for queue workers
+> - Set up Laravel Scheduler cron
+> - Configure Cloudflare R2 production bucket
+> - Set production .env values
+> - Build React for production (`npm run build`)
+> - Point domain to server
+>
+> **Phase 5 — Go live:**
+> - Create real admin account
+> - Import customer list with preferred formats
+> - Connect real WhatsApp Business number to Meta Cloud API
+> - Upload first batch of real bills
+> - Monitor reminder logs
+> - Train admin staff on the portal
+>
+> ---
+>
+> ### Non-Negotiable Decisions — Final, Do Not Change
+> - No Tailwind — vanilla CSS only
+> - No SMS — WhatsApp only
+> - No payment gateway — GPay and NEFT, manual proof submission
+> - No public file URLs — always signed 15-minute URLs
+> - No PDF sent over WhatsApp — text link only
+> - No multi-tenant — Leo Group only
+> - No third-party WhatsApp provider — Meta Cloud API direct
+> - Bills are PDF, CSV, or Excel — one format per customer, never mixed
+> - Outstanding amount = sum of all bills where payment_status is unpaid or proof_rejected
+> - Customer code assigned by admin — not auto-generated
+> - Registration always requires admin approval — no instant access
+> - 3 roles only: admin, customer, marketing_company
