@@ -26,7 +26,7 @@ class OverviewController extends Controller
         try {
             $url = rtrim(config('services.external_billing.url'), '/') . '/API/announcements/bill_master.php';
             $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders([
-                'Host' => 'billingsystem.leogroup.in',
+                
                 'ngrok-skip-browser-warning' => 'true'
             ])->get($url);
             if ($res->successful()) {
