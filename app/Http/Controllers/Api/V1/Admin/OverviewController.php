@@ -34,7 +34,8 @@ class OverviewController extends Controller
                     if (is_array($bills)) {
                         $billsToday = collect($bills)->filter(function($b) use ($today) {
                             try {
-                                return isset($b['bill_date']) && Carbon::parse($b['bill_date'])->isSameDay($today);
+                                $dateField = $b['DATE'] ?? $b['bill_date'] ?? null;
+                                return $dateField && Carbon::parse($dateField)->isSameDay($today);
                             } catch (\Exception $e) { return false; }
                         })->count();
                     }
