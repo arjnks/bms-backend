@@ -188,7 +188,8 @@ class ExternalBillingService
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.xlsx';
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.xlsx';
         $writer = new Xlsx($spreadsheet);
         $writer->save($tmpPath);
         return $tmpPath;
@@ -199,7 +200,8 @@ class ExternalBillingService
      */
     public function generateCsv(array $items, string $billNo): string
     {
-        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.csv';
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.csv';
         $fp = fopen($tmpPath, 'w');
 
         // UTF-8 BOM for Excel compatibility
@@ -247,7 +249,8 @@ class ExternalBillingService
         $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount'))
             ->setPaper('a4', 'landscape');
 
-        $tmpPath = sys_get_temp_dir() . "/bill_{$billNo}_" . time() . '.pdf';
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
         $pdf->save($tmpPath);
         return $tmpPath;
     }
