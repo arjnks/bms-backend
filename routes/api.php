@@ -18,6 +18,14 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login']);
     Route::post('/auth/register', [AuthController::class, 'register']);
     
+    Route::get('/cleanup-dummies', function() {
+        $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
+        \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
+        \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
+        $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
+        return ['deleted' => $count];
+    });
+
     // Signed route for downloading generated manual bills
     Route::get('/customer/bills/{id}/stream', [CustomerBillController::class, 'stream'])
         ->name('bills.download.stream')
