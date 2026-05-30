@@ -21,23 +21,29 @@ class OverviewController extends Controller
             ->where('bill_date', '>=', $thisMonth)
             ->sum('grand_total');
 
-        // Bills Sent Today (Live from ERP for real-time updates)
+        // Bills Sent Today (Live from ERP, falls back to local DB if ERP unreachable)
         $billsToday = 0;
         try {
-            $url = rtrim(config('services.external_billing.url'), '/') . '/API/announcements/bill_master.php';
-            $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders([
-                
-                'ngrok-skip-browser-warning' => 'true'
-            ])->get($url);
-            if ($res->successful()) {
-                $bills = $res->json();
-                $billsToday = collect($bills)->filter(function($b) use ($today) {
-                    return Carbon::parse($b['bill_date'])->isSameDay($today);
-                })->count();
-            } else {
-                $billsToday = Bill::whereDate('bill_date', $today)->count();
+            $erpUrl = rtrim(config('services.external_billing.url', ''), '/');
+            if ($erpUrl) {
+                $res = \Illuminate\Support\Facades\Http::timeout(5)->withHeaders([
+                    'ngrok-skip-browser-warning' => 'true'
+                ])->get($erpUrl . '/API/announcements/bill_master.php');
+                if ($res->successful()) {
+                    $bills = $res->json();
+                    if (is_array($bills)) {
+                        $billsToday = collect($bills)->filter(function($b) use ($today) {
+                            try {
+                                return isset($b['bill_date']) && Carbon::parse($b['bill_date'])->isSameDay($today);
+                            } catch (\Exception $e) { return false; }
+                        })->count();
+                    }
+                }
             }
         } catch (\Exception $e) {
+            // ERP unreachable — silently fall through to local count
+        }
+        if ($billsToday === 0) {
             $billsToday = Bill::whereDate('bill_date', $today)->count();
         }
 

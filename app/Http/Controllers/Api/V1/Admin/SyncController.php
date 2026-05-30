@@ -148,6 +148,7 @@ class SyncController extends Controller
         if (!empty($userRowsToInsert)) {
             $codeMap = [];
             $dbRows  = [];
+            $defaultPassword = \Illuminate\Support\Facades\Hash::make('leo123');
 
             foreach ($userRowsToInsert as $r) {
                 $codeMap[$r['email']] = $r['code'];
@@ -156,7 +157,7 @@ class SyncController extends Controller
                     'email'      => $r['email'],
                     'phone'      => $r['phone'],
                     'username'   => !empty($r['code']) ? strtolower($r['code']) : 'user-' . substr(md5($r['email']), 0, 8),
-                    'password'   => Hash::make('leo123'),
+                    'password'   => $defaultPassword,
                     'role'       => 'customer',
                     'status'     => 'active',
                     'created_at' => $now,
