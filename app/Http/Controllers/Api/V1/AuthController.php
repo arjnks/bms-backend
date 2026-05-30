@@ -43,15 +43,17 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
+            'login' => 'required|string',
             'password' => 'required',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $request->login)
+                    ->orWhere('username', $request->login)
+                    ->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             LoginLog::create([
-                'email' => $request->email,
+                'email' => $request->login,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'status' => 'failed',
@@ -61,7 +63,7 @@ class AuthController extends Controller
 
         if ($user->status !== 'active') {
             LoginLog::create([
-                'email' => $request->email,
+                'email' => $request->login,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'status' => 'failed',
@@ -70,7 +72,7 @@ class AuthController extends Controller
         }
 
         LoginLog::create([
-            'email' => $request->email,
+            'email' => $request->login,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'status' => 'success',

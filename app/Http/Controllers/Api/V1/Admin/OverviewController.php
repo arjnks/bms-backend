@@ -24,7 +24,11 @@ class OverviewController extends Controller
         // Bills Sent Today (Live from ERP for real-time updates)
         $billsToday = 0;
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders(['Host' => 'billingsystem.leogroup.in'])->get('http://43.204.148.79/API/announcements/bill_master.php');
+            $url = rtrim(config('services.external_billing.url'), '/') . '/API/announcements/bill_master.php';
+            $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders([
+                'Host' => 'billingsystem.leogroup.in',
+                'ngrok-skip-browser-warning' => 'true'
+            ])->get($url);
             if ($res->successful()) {
                 $bills = $res->json();
                 $billsToday = collect($bills)->filter(function($b) use ($today) {
