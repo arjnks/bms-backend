@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Customer\BillController as CustomerBillControlle
 use App\Http\Controllers\Api\V1\Customer\PreferenceController as CustomerPreferenceController;
 use App\Http\Controllers\Api\V1\Customer\ExternalBillController;
 use App\Http\Controllers\Api\V1\Admin\SyncController;
+use App\Http\Controllers\Api\V1\Admin\SyncBillsController;
 
 Route::prefix('v1')->group(function () {
     // Auth Routes
@@ -78,9 +79,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/aging', [ReportController::class, 'aging']);
             Route::get('/reports/collections', [ReportController::class, 'collections']);
 
-            // Sync
+            // Sync Customers
             Route::get('/sync/status', [SyncController::class, 'status']);
             Route::post('/sync/customers', [SyncController::class, 'syncCustomers']);
+
+            // Sync Bills from ERP
+            Route::post('/sync/bills', [SyncBillsController::class, 'syncBills']);
+            Route::get('/sync/bills/status', [SyncBillsController::class, 'billSyncStatus']);
         });
 
         // Customer Routes
