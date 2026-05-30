@@ -28,7 +28,10 @@ class ExternalBillingService
     {
         try {
             $response = Http::timeout(60)
-                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->withHeaders([
+                    'Host' => 'billingsystem.leogroup.in',
+                    'ngrok-skip-browser-warning' => 'true'
+                ])
                 ->get("{$this->baseUrl}/API/announcements/customer_details.php");
 
             if ($response->successful()) {
@@ -48,7 +51,10 @@ class ExternalBillingService
     {
         try {
             $response = Http::timeout(15)
-                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->withHeaders([
+                    'Host' => 'billingsystem.leogroup.in',
+                    'ngrok-skip-browser-warning' => 'true'
+                ])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_master.php", [
                     ['name' => 'cucode',    'contents' => $cucode],
@@ -78,7 +84,10 @@ class ExternalBillingService
     {
         try {
             $response = Http::timeout(15)
-                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->withHeaders([
+                    'Host' => 'billingsystem.leogroup.in',
+                    'ngrok-skip-browser-warning' => 'true'
+                ])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
                     ['name' => 'billno', 'contents' => (string) $billNo],
