@@ -108,3 +108,10 @@ Route::get('/setup-seed', function () {
 Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
 
 Route::get('/dump-bill/{id}', function($id) { $b = \App\Models\Bill::find($id); return $b ? $b : ['error' => 'not found']; });
+Route::get('/cleanup-dummies', function() {
+    $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
+    \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
+    \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
+    $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
+    return ['deleted' => $count];
+});

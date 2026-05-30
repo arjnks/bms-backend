@@ -21,8 +21,24 @@ class OverviewController extends Controller
             ->where('bill_date', '>=', $thisMonth)
             ->sum('grand_total');
 
-        // Bills Sent Today
-        $billsToday = Bill::whereDate('bill_date', $today)->count();
+        // Bills Sent Today (Live from ERP for real-time updates)
+        $billsToday = 0;
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders(['Host' => 'billingsystem.leogroup.in'])->get('http://43.204.148.79/API/announcements/bill_master.php');
+            if ($res->successful()) {
+                $bills = $res->json();
+                $billsToday = collect($bills)->filter(function($b) use ($today) {
+                    return Carbon::parse($b['bill_date'])->isSameDay($today);
+                })->count();
+            } else {
+                $billsToday = Bill::whereDate('bill_date', $today)->count();
+            }
+        } catch (\Exception $e) {
+            $billsToday = Bill::whereDate('bill_date', $today)->count();
+        }
+
+        // Total Customers
+        $totalCustomers = \App\Models\User::where('role', 'customer')->count();
 
         // Overdue Count
         $overdueCount = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
@@ -72,6 +88,7 @@ class OverviewController extends Controller
         }
 
         return response()->json([
+            'total_customers' => $totalCustomers,
             'total_outstanding' => (float) $totalOutstanding,
             'bills_today' => $billsToday,
             'overdue_count' => $overdueCount,
