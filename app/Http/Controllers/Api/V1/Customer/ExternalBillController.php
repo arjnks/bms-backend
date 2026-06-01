@@ -95,8 +95,11 @@ class ExternalBillController extends Controller
      */
     public function downloadUrl(Request $request, string $billno)
     {
-        $customer = $this->getCustomer($request);
-        
+        $customer = $request->user()->customer;
+        if (!$customer) {
+            return response()->json(['message' => 'Not a customer profile'], 403);
+        }
+
         $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
                   ->where('customer_id', $customer->id)
                   ->first();
@@ -107,28 +110,32 @@ class ExternalBillController extends Controller
         
         $format   = $customer->preferred_bill_format ?? 'excel';
 
-        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
-            'external.bills.stream',
-            now()->addMinutes(15),
-            ['billno' => $billno, 'format' => $format]
-        );
+        // Generate a secure one-time token and store it in cache for 15 minutes
+        $token = \Illuminate\Support\Str::random(40);
+        \Illuminate\Support\Facades\Cache::put("bill_dl_{$token}", ['billno' => $billno, 'format' => $format], now()->addMinutes(15));
+
+        // Return the tokenized download URL
+        $url = url("/api/v1/customer/external-bills/stream-token/{$token}");
         return response()->json(['download_url' => $url]);
     }
 
     /**
-     * Signed stream handler — no auth needed, URL signature validates access.
-     * GET /customer/external-bills/{billno}/stream  (signed)
+     * Token stream handler — validates the cache token instead of URL signature.
      */
-    public function stream(Request $request, string $billno)
+    public function streamByToken(Request $request, string $token)
     {
-        if (!$request->hasValidSignature()) {
-            abort(403, 'Download link has expired. Please request a new one.');
+        $data = \Illuminate\Support\Facades\Cache::pull("bill_dl_{$token}");
+
+        if (!$data) {
+            abort(403, 'Download link has expired or is invalid. Please request a new one.');
         }
+
+        $billno = $data['billno'];
+        $format = $data['format'];
 
         preg_match('/(\d+)$/', $billno, $matches);
         $numericId = (int) ($matches[1] ?? $billno);
 
-        $format = $request->query('format', 'excel');
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         

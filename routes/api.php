@@ -32,11 +32,9 @@ Route::prefix('v1')->group(function () {
         ->name('bills.download.stream')
         ->middleware('signed');
 
-    // Signed route for downloading live ERP bills directly from Railway (bypasses Vercel proxy)
-    Route::get('/customer/external-bills/{billno}/stream', [ExternalBillController::class, 'stream'])
-        ->name('external.bills.stream')
-        ->middleware('signed')
-        ->where('billno', '.*');
+    // Token route for downloading live ERP bills directly from Railway (bypasses Vercel proxy)
+    Route::get('/customer/external-bills/stream-token/{token}', [ExternalBillController::class, 'streamByToken'])
+        ->name('external.bills.stream');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -140,3 +138,15 @@ Route::get('/cleanup-dummies', function() {
     $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
     return ['deleted' => $count];
 });
+<?php
+use Illuminate\Support\Facades\Route;
+Route::get("/debug-request", function(\Illuminate\Http\Request $req) {
+    return [
+        "url" => $req->url(),
+        "fullUrl" => $req->fullUrl(),
+        "scheme" => $req->getScheme(),
+        "isSecure" => $req->secure(),
+        "headers" => $req->headers->all()
+    ];
+});
+
