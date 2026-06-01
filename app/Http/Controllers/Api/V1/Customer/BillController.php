@@ -13,6 +13,30 @@ use Illuminate\Validation\Rule;
 
 class BillController extends Controller
 {
+    private function isExternalUrl(?string $url): bool
+    {
+        return is_string($url) && preg_match('/^https?:\/\//i', $url);
+    }
+
+    private function localBillPath(?string $path): ?string
+    {
+        if (!$path || $this->isExternalUrl($path)) {
+            return null;
+        }
+
+        $path = ltrim($path, '/');
+        if (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+
+        return $path;
+    }
+
+    private function safeBillNo(string $billNo): string
+    {
+        return preg_replace('/[^A-Za-z0-9._-]+/', '_', $billNo) ?: 'bill';
+    }
+
     private function getCustomerId(Request $request)
     {
         // Get the customer ID associated with the currently authenticated user
@@ -55,13 +79,37 @@ class BillController extends Controller
 
         $lineItems = collect();
         try {
+            if ($bill->lineItems()->count() === 0 && $bill->customer->external_cucode) {
+                // Fetch from ERP on the fly
+                preg_match('/(\d+)$/', $bill->invoice_no, $matches);
+                $numericId = (int) ($matches[1] ?? $bill->invoice_no);
+                $billingService = app(\App\Services\ExternalBillingService::class);
+                $items = $billingService->getBillDetails($numericId);
+                
+                if (!empty($items)) {
+                    foreach ($items as $item) {
+                        try {
+                            $bill->lineItems()->create([
+                                'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                                'hsn_code'     => $item['HSNCODE'] ?? null,
+                                'qty'          => $item['QUANTITY'] ?? 1,
+                                'unit'         => $item['UNIT'] ?? 'NOS',
+                                'rate'         => $item['SRATE'] ?? 0,
+                                'gst_pct'      => $item['GSTRATE'] ?? 0,
+                                'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                            ]);
+                        } catch (\Exception $e) {}
+                    }
+                }
+            }
             $lineItems = $bill->lineItems;
         } catch (\Illuminate\Database\QueryException $e) {
             \Illuminate\Support\Facades\Log::warning('bill_line_items table missing on customer show', ['error' => $e->getMessage()]);
         }
 
         $billArray = $bill->toArray();
-        $billArray['line_items'] = $lineItems;
+        $billArray['line_items'] = $lineItems->values();
+        $billArray['lineItems'] = $billArray['line_items'];
 
         return response()->json($billArray);
     }
@@ -72,12 +120,12 @@ class BillController extends Controller
 
         $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
 
-        // If we pre-generated and uploaded to cloud (S3/R2)
-        if ($bill->bill_file_url) {
+        // Cloud-hosted bills can be opened directly. Local uploads must go
+        // through the signed stream route because Railway has no /storage link.
+        if ($this->isExternalUrl($bill->bill_file_url)) {
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
-        // Fallback: Generate a signed URL to stream it live from ERP
         $url = URL::temporarySignedRoute('bills.download.stream', now()->addMinutes(30), ['id' => $bill->id]);
         return response()->json(['download_url' => $url]);
     }
@@ -86,6 +134,20 @@ class BillController extends Controller
     {
         // No customerId check because it's a signed route, but we must ensure it exists.
         $bill = Bill::with('customer.user')->findOrFail($id);
+
+        if ($this->isExternalUrl($bill->bill_file_url)) {
+            return redirect()->away($bill->bill_file_url);
+        }
+
+        $storedPath = $this->localBillPath($bill->bill_file_url);
+        if ($storedPath && Storage::disk('public')->exists($storedPath)) {
+            $filename = basename($storedPath) ?: 'bill_' . $this->safeBillNo($bill->invoice_no);
+            $mime = Storage::disk('public')->mimeType($storedPath) ?: 'application/octet-stream';
+
+            return Storage::disk('public')->download($storedPath, $filename, [
+                'Content-Type' => $mime,
+            ]);
+        }
 
         // Extract the raw numeric billno from a string like "LPH/2627/96609"
         preg_match('/(\d+)$/', $bill->invoice_no, $matches);
@@ -103,7 +165,7 @@ class BillController extends Controller
         $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
         $billDate = $items[0]['BILLDATE'] ?? ($bill->bill_date ? $bill->bill_date->format('Y-m-d') : now()->format('Y-m-d'));
 
-        $safeBillNo = str_replace(['/', '\\'], '_', $billNoStr);
+        $safeBillNo = $this->safeBillNo($billNoStr);
 
         switch ($format) {
             case 'pdf':

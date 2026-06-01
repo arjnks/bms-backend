@@ -118,12 +118,29 @@ class BillController extends Controller
             Log::warning('bill_line_items table missing, skipping line items', ['error' => $e->getMessage()]);
         }
 
-        if ($lineItems->isEmpty()) {
+        if ($lineItems->isEmpty() && $bill->customer && $bill->customer->external_cucode) {
             $numericBillNo = $this->numericBillNo((string) $bill->invoice_no);
 
             if ($numericBillNo > 0) {
                 try {
-                    $lineItems = collect(app(ExternalBillingService::class)->getBillDetails($numericBillNo));
+                    $billingService = app(ExternalBillingService::class);
+                    $items = $billingService->getBillDetails($numericBillNo);
+                    if (!empty($items)) {
+                        foreach ($items as $item) {
+                            try {
+                                $bill->lineItems()->create([
+                                    'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                                    'hsn_code'     => $item['HSNCODE'] ?? null,
+                                    'qty'          => $item['QUANTITY'] ?? 1,
+                                    'unit'         => $item['UNIT'] ?? 'NOS',
+                                    'rate'         => $item['SRATE'] ?? 0,
+                                    'gst_pct'      => $item['GSTRATE'] ?? 0,
+                                    'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                                ]);
+                            } catch (\Exception $e) {}
+                        }
+                        $lineItems = $bill->lineItems; // reload after saving
+                    }
                 } catch (\Throwable $e) {
                     Log::warning('ERP bill details unavailable on admin bill show', [
                         'bill_id' => $bill->id,
