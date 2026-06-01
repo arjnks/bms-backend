@@ -129,6 +129,14 @@ class ExternalBillController extends Controller
         $numericId = (int) ($matches[1] ?? $billno);
 
         $format = $request->query('format', 'excel');
+        $r2Path = $this->billing->getCachedFilePath($format, $billno);
+        $safeBillNo = str_replace(['/', '\\'], '_', $billno);
+        
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            $ext = $format === 'excel' ? 'xlsx' : $format;
+            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+        }
+
         $items  = $this->billing->getBillDetails($numericId);
 
         if (empty($items)) {
@@ -158,10 +166,9 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        return response()->download($path, $filename, [
-            'Content-Type'        => $mime,
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ])->deleteFileAfterSend(true);
+        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
+            'Content-Type' => $mime,
+        ]);
     }
 
     /**
@@ -182,6 +189,14 @@ class ExternalBillController extends Controller
         
         $format   = $customer->preferred_bill_format ?? 'excel';
 
+        $r2Path = $this->billing->getCachedFilePath($format, $billno);
+        $safeBillNo = str_replace(['/', '\\'], '_', $billno);
+        
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            $ext = $format === 'excel' ? 'xlsx' : $format;
+            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+        }
+
         preg_match('/(\d+)$/', $billno, $matches);
         $numericId = (int) ($matches[1] ?? $billno);
 
@@ -198,26 +213,24 @@ class ExternalBillController extends Controller
         switch ($format) {
             case 'pdf':
                 $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $filename = "bill_{$billno}.pdf";
+                $filename = "bill_{$safeBillNo}.pdf";
                 $mime     = 'application/pdf';
                 break;
 
             case 'csv':
-                $path     = $this->billing->generateCsv($items, $billno);
-                $filename = "bill_{$billno}.csv";
+                $path     = $this->billing->generateCsv($items, $billNoStr);
+                $filename = "bill_{$safeBillNo}.csv";
                 $mime     = 'text/csv';
                 break;
 
             default: // excel
                 $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
-                $filename = "bill_{$billno}.xlsx";
+                $filename = "bill_{$safeBillNo}.xlsx";
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-                break;
         }
 
-        return response()->download($path, $filename, [
-            'Content-Type'        => $mime,
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ])->deleteFileAfterSend(true);
+        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
+            'Content-Type' => $mime,
+        ]);
     }
 }

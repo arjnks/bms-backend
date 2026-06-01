@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
@@ -107,6 +108,13 @@ class ExternalBillingService
         return [];
     }
 
+    public function getCachedFilePath(string $format, string $billNo): string
+    {
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $ext = $format === 'excel' ? 'xlsx' : $format;
+        return "bills/{$format}/bill_{$safeBillNo}.{$ext}";
+    }
+
     /**
      * Generate an Excel (.xlsx) file from bill line items.
      * Returns the file path (temp file).
@@ -192,7 +200,12 @@ class ExternalBillingService
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.xlsx';
         $writer = new Xlsx($spreadsheet);
         $writer->save($tmpPath);
-        return $tmpPath;
+        
+        $r2Path = $this->getCachedFilePath('excel', $billNo);
+        Storage::disk('r2')->putFileAs('bills/excel', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.xlsx");
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 
     /**
@@ -237,7 +250,12 @@ class ExternalBillingService
         }
 
         fclose($fp);
-        return $tmpPath;
+        
+        $r2Path = $this->getCachedFilePath('csv', $billNo);
+        Storage::disk('r2')->putFileAs('bills/csv', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.csv");
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 
     /**
@@ -252,6 +270,11 @@ class ExternalBillingService
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
         $pdf->save($tmpPath);
-        return $tmpPath;
+        
+        $r2Path = $this->getCachedFilePath('pdf', $billNo);
+        Storage::disk('r2')->putFileAs('bills/pdf', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.pdf");
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 }

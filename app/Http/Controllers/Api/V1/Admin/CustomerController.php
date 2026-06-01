@@ -279,6 +279,15 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
         }
 
+        $safeBillno = str_replace(['/', '\\'], '_', $billno);
+        $r2Path = $billing->getCachedFilePath('pdf', $billno);
+
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillno}.pdf", [
+                'Content-Type' => 'application/pdf',
+            ]);
+        }
+
         preg_match('/(\d+)$/', $billno, $matches);
         $numericId = (int) ($matches[1] ?? $billno);
 
@@ -296,14 +305,11 @@ class CustomerController extends Controller
         $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
         $customerName = $customer->user->name ?? 'Customer';
 
-        $path     = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+        // This now generates, uploads to R2, and returns the R2 path
+        $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
         
-        $safeBillNo = str_replace(['/', '\\'], '_', $billno);
-        $filename = "bill_{$safeBillNo}.pdf";
-
-        return response()->download($path, $filename, [
-            'Content-Type'        => 'application/pdf',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ])->deleteFileAfterSend(true);
+        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, "bill_{$safeBillno}.pdf", [
+            'Content-Type' => 'application/pdf',
+        ]);
     }
 }
