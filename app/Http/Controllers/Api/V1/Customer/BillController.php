@@ -203,10 +203,8 @@ class BillController extends Controller
                 break;
         }
 
-        return response()->download($path, $filename, [
-            'Content-Type'        => $mime,
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ])->deleteFileAfterSend(true);
+        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
+        return redirect()->away($url);
     }
 
     public function submitPayment(Request $request, $id)
