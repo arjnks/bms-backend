@@ -57,8 +57,8 @@ Route::prefix('v1')->group(function () {
             
             // Customer External Bills
             Route::get('/customers/{id}/external-bills', [AdminCustomerController::class, 'externalBills']);
-            Route::get('/customers/{id}/external-bills/{billno}', [AdminCustomerController::class, 'externalBillDetails'])->where('billno', '.*');
             Route::get('/customers/{id}/external-bills/{billno}/download', [AdminCustomerController::class, 'downloadExternalBill'])->where('billno', '.*');
+            Route::get('/customers/{id}/external-bills/{billno}', [AdminCustomerController::class, 'externalBillDetails'])->where('billno', '.*');
             
             // Security Logs
             Route::get('/login-logs', [\App\Http\Controllers\Api\V1\Admin\LoginLogController::class, 'index']);
@@ -108,14 +108,15 @@ Route::prefix('v1')->group(function () {
             Route::patch('/preferences', [CustomerPreferenceController::class, 'update']);
             // Live bills from billing system
             Route::get('/live-bills', [ExternalBillController::class, 'index']);
-            Route::get('/live-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
             Route::get('/live-bills/{billno}/download', [ExternalBillController::class, 'download'])->where('billno', '.*');
+            Route::get('/live-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
+            
             // Keep old routes for backward compat
             Route::get('/external-bills', [ExternalBillController::class, 'index']);
-            Route::get('/external-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
             Route::get('/external-bills/{billno}/download', [ExternalBillController::class, 'download'])->where('billno', '.*');
             // Signed URL generator — returns Railway-direct URL, avoids Vercel proxy for binary files
             Route::get('/external-bills/{billno}/download-url', [ExternalBillController::class, 'downloadUrl'])->where('billno', '.*');
+            Route::get('/external-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
         });
     });
 });
