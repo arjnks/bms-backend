@@ -133,20 +133,22 @@ class ExternalBillController extends Controller
         $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
         $customerName = '';
 
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNoStr);
+
         switch ($format) {
             case 'pdf':
                 $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $filename = "bill_{$billno}.pdf";
+                $filename = "bill_{$safeBillNo}.pdf";
                 $mime     = 'application/pdf';
                 break;
             case 'csv':
                 $path     = $this->billing->generateCsv($items, $billNoStr);
-                $filename = "bill_{$billno}.csv";
+                $filename = "bill_{$safeBillNo}.csv";
                 $mime     = 'text/csv';
                 break;
             default:
                 $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
-                $filename = "bill_{$billno}.xlsx";
+                $filename = "bill_{$safeBillNo}.xlsx";
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
