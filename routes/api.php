@@ -68,6 +68,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/bills/{id}', [AdminBillController::class, 'show']);
             Route::get('/bills/{id}/download', [AdminBillController::class, 'download']);
             Route::post('/bills/{id}/mark-paid', [AdminBillController::class, 'markPaid']);
+            Route::post('/bills/{id}/revert', [AdminBillController::class, 'revertPayment']);
             Route::post('/bills/{id}/verify-payment', [AdminBillController::class, 'verifyPayment']);
             Route::post('/bills/{id}/reject-payment', [AdminBillController::class, 'rejectPayment']);
             

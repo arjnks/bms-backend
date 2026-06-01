@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Bill;
 use App\Models\BillLineItem;
 use App\Models\ReminderLog;
+use App\Services\ExternalBillingService;
 use App\Services\WhatsAppService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -23,6 +24,18 @@ class BillController extends Controller
     public function __construct(WhatsAppService $whatsapp)
     {
         $this->whatsapp = $whatsapp;
+    }
+
+    private function isExternalUrl(?string $url): bool
+    {
+        return is_string($url) && preg_match('/^https?:\/\//i', $url);
+    }
+
+    private function numericBillNo(string $invoiceNo): int
+    {
+        preg_match('/(\d+)$/', $invoiceNo, $matches);
+
+        return (int) ($matches[1] ?? $invoiceNo);
     }
 
     public function overview()
@@ -105,6 +118,22 @@ class BillController extends Controller
             Log::warning('bill_line_items table missing, skipping line items', ['error' => $e->getMessage()]);
         }
 
+        if ($lineItems->isEmpty()) {
+            $numericBillNo = $this->numericBillNo((string) $bill->invoice_no);
+
+            if ($numericBillNo > 0) {
+                try {
+                    $lineItems = collect(app(ExternalBillingService::class)->getBillDetails($numericBillNo));
+                } catch (\Throwable $e) {
+                    Log::warning('ERP bill details unavailable on admin bill show', [
+                        'bill_id' => $bill->id,
+                        'invoice_no' => $bill->invoice_no,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         $proofUrl = null;
         if ($bill->proof_screenshot) {
             try { $proofUrl = Storage::disk('public')->url($bill->proof_screenshot); } catch (\Exception $e) {}
@@ -139,11 +168,11 @@ class BillController extends Controller
     {
         $bill = Bill::findOrFail($id);
 
-        if ($bill->bill_file_url) {
+        if ($this->isExternalUrl($bill->bill_file_url)) {
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
-        // ERP-sourced bill — generate a signed stream URL (valid 30 min)
+        // Local uploads and ERP-sourced bills are streamed through Railway.
         $url = URL::temporarySignedRoute(
             'bills.download.stream',
             now()->addMinutes(30),
@@ -214,6 +243,25 @@ class BillController extends Controller
         ]);
 
         return response()->json(['message' => 'Bill marked as paid', 'bill' => $bill]);
+    }
+
+    public function revertPayment(Request $request, $id)
+    {
+        $bill = Bill::findOrFail($id);
+        
+        $isPastDue = $bill->due_date && Carbon::parse($bill->due_date)->isPast();
+
+        $bill->update([
+            'status' => $isPastDue ? 'overdue' : 'unpaid',
+            'payment_status' => 'unpaid',
+            'payment_verified_at' => null,
+            'payment_submitted_at' => null,
+            'proof_screenshot' => null,
+            'utr_number' => null,
+            'payment_method' => null,
+        ]);
+
+        return response()->json(['message' => 'Bill reverted to unpaid', 'bill' => $bill]);
     }
 
     public function verifyPayment(Request $request, $id)
