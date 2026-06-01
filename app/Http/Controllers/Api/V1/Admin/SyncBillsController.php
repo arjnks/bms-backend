@@ -100,8 +100,13 @@ class SyncBillsController extends Controller
                         }
                         $bill->save();
 
-                        // Pre-generate and upload file to cloud if missing
-                        if (empty($bill->bill_file_url)) {
+                        // Check if we need to fetch from ERP (missing file OR missing line items)
+                        $needsItems = false;
+                        try {
+                            $needsItems = $bill->lineItems()->count() === 0;
+                        } catch (\Exception $e) {} // Ignore if table missing locally during sync
+
+                        if (empty($bill->bill_file_url) || $needsItems) {
                             // Extract numeric ID
                             preg_match('/(\d+)$/', $bill->invoice_no, $matches);
                             $numericId = (int) ($matches[1] ?? $bill->invoice_no);
@@ -109,44 +114,63 @@ class SyncBillsController extends Controller
                             $items = $billingService->getBillDetails($numericId);
                             
                             if (!empty($items)) {
-                                $customerName = $customer->user->name ?? 'Customer';
-                                $format = $customer->preferred_bill_format ?? 'pdf';
-                                
-                                $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
-                                $bDate = $items[0]['BILLDATE'] ?? $billDate->format('Y-m-d');
-
-                                switch ($format) {
-                                    case 'pdf':
-                                        $path     = $billingService->generatePdf($items, $billNoStr, $bDate, $customerName);
-                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.pdf";
-                                        $mime     = 'application/pdf';
-                                        break;
-                                    case 'csv':
-                                        $path     = $billingService->generateCsv($items, $billNoStr);
-                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.csv";
-                                        $mime     = 'text/csv';
-                                        break;
-                                    default: // excel
-                                        $path     = $billingService->generateExcel($items, $billNoStr, $bDate);
-                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.xlsx";
-                                        $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-                                        break;
+                                if ($needsItems) {
+                                    foreach ($items as $item) {
+                                        try {
+                                            $bill->lineItems()->create([
+                                                'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                                                'hsn_code'     => $item['HSNCODE'] ?? null,
+                                                'qty'          => $item['QUANTITY'] ?? 1,
+                                                'unit'         => $item['UNIT'] ?? 'NOS',
+                                                'rate'         => $item['SRATE'] ?? 0,
+                                                'gst_pct'      => $item['GSTRATE'] ?? 0,
+                                                'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                                            ]);
+                                        } catch (\Exception $e) {} // Ignore if table missing
+                                    }
                                 }
 
-                                try {
-                                    $file = new \Illuminate\Http\File($path);
-                                    \Illuminate\Support\Facades\Storage::disk('s3')->putFileAs('', $file, $filename, [
-                                        'visibility' => 'public',
-                                        'ContentType' => $mime
-                                    ]);
+                                if (empty($bill->bill_file_url)) {
+                                    $customerName = $customer->user->name ?? 'Customer';
+                                    $format = $customer->preferred_bill_format ?? 'pdf';
                                     
-                                    $url = \Illuminate\Support\Facades\Storage::disk('s3')->url($filename);
-                                    $bill->update(['bill_file_url' => $url]);
-                                } catch (\Exception $e) {
-                                    Log::error('S3 Upload Failed', ['error' => $e->getMessage()]);
+                                    $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
+                                    $safeBillNo = str_replace(['/', '\\'], '_', $billNoStr);
+                                    $bDate = $items[0]['BILLDATE'] ?? $billDate->format('Y-m-d');
+
+                                    switch ($format) {
+                                        case 'pdf':
+                                            $path     = $billingService->generatePdf($items, $billNoStr, $bDate, $customerName);
+                                            $filename = "bills/{$customer->_effective_cucode}/bill_{$safeBillNo}.pdf";
+                                            $mime     = 'application/pdf';
+                                            break;
+                                        case 'csv':
+                                            $path     = $billingService->generateCsv($items, $billNoStr);
+                                            $filename = "bills/{$customer->_effective_cucode}/bill_{$safeBillNo}.csv";
+                                            $mime     = 'text/csv';
+                                            break;
+                                        default: // excel
+                                            $path     = $billingService->generateExcel($items, $billNoStr, $bDate);
+                                            $filename = "bills/{$customer->_effective_cucode}/bill_{$safeBillNo}.xlsx";
+                                            $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                                            break;
+                                    }
+
+                                    try {
+                                        $file = new \Illuminate\Http\File($path);
+                                        \Illuminate\Support\Facades\Storage::disk('s3')->putFileAs('', $file, $filename, [
+                                            'visibility' => 'public',
+                                            'ContentType' => $mime
+                                        ]);
+                                        
+                                        $url = \Illuminate\Support\Facades\Storage::disk('s3')->url($filename);
+                                        $bill->update(['bill_file_url' => $url]);
+                                    } catch (\Exception $e) {
+                                        Log::error('S3 Upload Failed', ['error' => $e->getMessage()]);
+                                    }
+                                    
+                                    @unlink($path);
                                 }
-                                
-                                @unlink($path);
                             }
                         }
 
