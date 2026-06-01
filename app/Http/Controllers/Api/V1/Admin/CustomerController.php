@@ -283,13 +283,8 @@ class CustomerController extends Controller
         $r2Path = $billing->getCachedFilePath('pdf', $billno);
 
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillno}.pdf", [
-                'Content-Type' => 'application/pdf',
-            ]);
-            $response->headers->set('Access-Control-Allow-Origin', '*');
-            $response->headers->remove('Access-Control-Allow-Credentials');
-            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-            return $response;
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return response()->json(['download_url' => $url]);
         }
 
         preg_match('/(\d+)$/', $billno, $matches);
@@ -312,12 +307,7 @@ class CustomerController extends Controller
         // This now generates, uploads to R2, and returns the R2 path
         $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
         
-        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, "bill_{$safeBillno}.pdf", [
-            'Content-Type' => 'application/pdf',
-        ]);
-        $response->headers->set('Access-Control-Allow-Origin', '*');
-        $response->headers->remove('Access-Control-Allow-Credentials');
-        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-        return $response;
+        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
+        return response()->json(['download_url' => $url]);
     }
 }

@@ -140,12 +140,8 @@ class ExternalBillController extends Controller
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            $ext = $format === 'excel' ? 'xlsx' : $format;
-            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
-            $response->headers->set('Access-Control-Allow-Origin', '*');
-            $response->headers->remove('Access-Control-Allow-Credentials');
-            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-            return $response;
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return response()->json(['download_url' => $url]);
         }
 
         $items  = $this->billing->getBillDetails($numericId);
@@ -177,12 +173,8 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
-            'Content-Type' => $mime,
-        ]);
-        $response->headers->set('Access-Control-Allow-Origin', '*');
-        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-        return $response;
+        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
+        return response()->json(['download_url' => $url]);
     }
 
     /**
@@ -207,11 +199,8 @@ class ExternalBillController extends Controller
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            $ext = $format === 'excel' ? 'xlsx' : $format;
-            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
-            $response->headers->set('Access-Control-Allow-Origin', '*');
-            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-            return $response;
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return response()->json(['download_url' => $url]);
         }
 
         preg_match('/(\d+)$/', $billno, $matches);
@@ -246,11 +235,7 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
-            'Content-Type' => $mime,
-        ]);
-        $response->headers->set('Access-Control-Allow-Origin', '*');
-        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
-        return $response;
+        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
+        return response()->json(['download_url' => $url]);
     }
 }
