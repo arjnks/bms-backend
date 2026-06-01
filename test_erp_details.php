@@ -1,9 +1,8 @@
 <?php
-require "vendor/autoload.php";
-$app = require_once "bootstrap/app.php";
-$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+require __DIR__.'/vendor/autoload.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
+$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->bootstrap();
 
-$api = app(\App\Services\ExternalBillingService::class);
-$details = $api->getBillDetails(97576);
-print_r($details);
-
+$bill = app(\App\Services\ExternalBillingService::class)->getBillDetails(107453);
+print_r($bill[0] ?? []);
