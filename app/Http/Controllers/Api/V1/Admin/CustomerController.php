@@ -256,7 +256,7 @@ class CustomerController extends Controller
         }
 
         // Verify that this bill actually belongs to this customer
-        if (($items[0]['cucode'] ?? '') !== $customer->external_cucode) {
+        if (isset($items[0]['cucode']) && $items[0]['cucode'] !== $customer->external_cucode) {
             return response()->json(['status' => 'error', 'message' => 'Bill does not belong to this customer.'], 403);
         }
 
@@ -288,7 +288,7 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Bill not found.'], 404);
         }
 
-        if (($items[0]['cucode'] ?? '') !== $customer->external_cucode) {
+        if (isset($items[0]['cucode']) && $items[0]['cucode'] !== $customer->external_cucode) {
             return response()->json(['message' => 'Bill does not belong to this customer.'], 403);
         }
 
@@ -297,7 +297,9 @@ class CustomerController extends Controller
         $customerName = $customer->user->name ?? 'Customer';
 
         $path     = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-        $filename = "bill_{$billno}.pdf";
+        
+        $safeBillNo = str_replace(['/', '\\'], '_', $billno);
+        $filename = "bill_{$safeBillNo}.pdf";
 
         return response()->download($path, $filename, [
             'Content-Type'        => 'application/pdf',
