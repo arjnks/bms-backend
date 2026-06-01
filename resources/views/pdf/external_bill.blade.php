@@ -338,8 +338,42 @@ $computedTotal = $taxableAmount + $cgstAmount + $sgstAmount + $igstAmount;
 $billAmount = $netAmount;
 $roundOff = $billAmount - $computedTotal;
 
-$nf = new \NumberFormatter("en", \NumberFormatter::SPELLOUT);
-$words = strtoupper($nf->format($netAmount)) . ' ONLY';
+if (!function_exists('numToWords')) {
+    function numToWords($num) {
+        $ones = array(
+            0 => 'ZERO', 1 => 'ONE', 2 => 'TWO', 3 => 'THREE', 4 => 'FOUR', 5 => 'FIVE', 6 => 'SIX', 7 => 'SEVEN', 8 => 'EIGHT', 9 => 'NINE',
+            10 => 'TEN', 11 => 'ELEVEN', 12 => 'TWELVE', 13 => 'THIRTEEN', 14 => 'FOURTEEN', 15 => 'FIFTEEN', 16 => 'SIXTEEN', 17 => 'SEVENTEEN', 18 => 'EIGHTEEN', 19 => 'NINETEEN'
+        );
+        $tens = array(
+            0 => 'ZERO', 1 => 'TEN', 2 => 'TWENTY', 3 => 'THIRTY', 4 => 'FORTY', 5 => 'FIFTY', 6 => 'SIXTY', 7 => 'SEVENTY', 8 => 'EIGHTY', 9 => 'NINETY'
+        );
+        $hundreds = array('HUNDRED', 'THOUSAND', 'MILLION', 'BILLION', 'TRILLION', 'QUADRILLION');
+        $num = number_format($num, 2, '.', '');
+        $num_arr = explode('.', $num);
+        $whole = $num_arr[0];
+        $dec = $num_arr[1];
+        $whole_arr = array_reverse(explode(',', number_format($whole)));
+        $k = 0;
+        $words = '';
+        foreach ($whole_arr as $val) {
+            $val = (int)$val;
+            if ($val == 0) { $k++; continue; }
+            $w = '';
+            if ($val < 20) {
+                $w = $ones[$val];
+            } elseif ($val < 100) {
+                $w = $tens[(int)($val / 10)] . ($val % 10 != 0 ? ' ' . $ones[$val % 10] : '');
+            } else {
+                $w = $ones[(int)($val / 100)] . ' ' . $hundreds[0] . ($val % 100 != 0 ? ' AND ' . numToWords($val % 100) : '');
+            }
+            $words = $w . ($k > 0 ? ' ' . $hundreds[$k] : '') . ' ' . $words;
+            $k++;
+        }
+        return trim($words);
+    }
+}
+
+$words = numToWords($netAmount) . ' ONLY';
 
 $custModel = \App\Models\Customer::whereHas('user', function($q) use($customerName) {
     $q->where('name', $customerName);
