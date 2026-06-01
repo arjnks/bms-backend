@@ -51,11 +51,19 @@ class BillController extends Controller
     {
         $customerId = $this->getCustomerId($request);
 
-        $bill = Bill::with('lineItems')
-            ->where('customer_id', $customerId)
-            ->findOrFail($id);
+        $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
 
-        return response()->json($bill);
+        $lineItems = collect();
+        try {
+            $lineItems = $bill->lineItems;
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Illuminate\Support\Facades\Log::warning('bill_line_items table missing on customer show', ['error' => $e->getMessage()]);
+        }
+
+        $billArray = $bill->toArray();
+        $billArray['line_items'] = $lineItems;
+
+        return response()->json($billArray);
     }
 
     public function download(Request $request, $id)
@@ -64,10 +72,9 @@ class BillController extends Controller
 
         $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
 
+        // If we pre-generated and uploaded to cloud (S3/R2)
         if ($bill->bill_file_url) {
-            // Generate a public URL to the locally-stored file
-            $url = Storage::disk('public')->url($bill->bill_file_url);
-            return response()->json(['download_url' => $url]);
+            return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
         // Fallback: Generate a signed URL to stream it live from ERP
