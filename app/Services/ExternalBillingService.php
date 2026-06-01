@@ -19,7 +19,7 @@ class ExternalBillingService
 
     public function __construct()
     {
-        $this->baseUrl = rtrim(config('services.external_billing.url', 'http://192.168.0.186:8080'), '/');
+        $this->baseUrl = rtrim(config('services.external_billing.url', 'https://unknowing-relight-civic.ngrok-free.dev'), '/');
     }
 
     /**
@@ -278,3 +278,4 @@ class ExternalBillingService
         return $r2Path;
     }
 }
+

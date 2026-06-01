@@ -42,7 +42,8 @@ return [
     ],
 
     'external_billing' => [
-        'url' => env('EXTERNAL_BILLING_URL', 'http://192.168.0.186:8080'),
+        'url' => env('EXTERNAL_BILLING_URL', 'https://unknowing-relight-civic.ngrok-free.dev'),
     ],
 
 ];
+
