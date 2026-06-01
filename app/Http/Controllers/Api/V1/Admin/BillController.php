@@ -140,10 +140,7 @@ class BillController extends Controller
         $bill = Bill::findOrFail($id);
 
         if ($bill->bill_file_url) {
-            try {
-                $url = Storage::disk('public')->url($bill->bill_file_url);
-                return response()->json(['download_url' => $url]);
-            } catch (\Exception $e) {}
+            return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
         // ERP-sourced bill — generate a signed stream URL (valid 30 min)

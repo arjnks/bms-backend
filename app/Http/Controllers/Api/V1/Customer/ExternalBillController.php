@@ -93,6 +93,15 @@ class ExternalBillController extends Controller
     public function downloadUrl(Request $request, int $billno)
     {
         $customer = $this->getCustomer($request);
+        
+        $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
+                  ->where('customer_id', $customer->id)
+                  ->first();
+                  
+        if ($bill && $bill->bill_file_url) {
+            return response()->json(['download_url' => $bill->bill_file_url]);
+        }
+        
         $format   = $customer->preferred_bill_format ?? 'excel';
 
         $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
@@ -154,6 +163,15 @@ class ExternalBillController extends Controller
     public function download(Request $request, int $billno)
     {
         $customer = $this->getCustomer($request);
+        
+        $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
+                  ->where('customer_id', $customer->id)
+                  ->first();
+                  
+        if ($bill && $bill->bill_file_url) {
+            return redirect()->away($bill->bill_file_url);
+        }
+        
         $format   = $customer->preferred_bill_format ?? 'excel';
 
         $items = $this->billing->getBillDetails($billno);

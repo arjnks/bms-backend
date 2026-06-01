@@ -82,7 +82,7 @@ class ExternalBillingService
     public function getBillDetails(int $billNo): array
     {
         try {
-            $response = Http::timeout(15)
+            $response = Http::timeout(45)
                 ->withHeaders([
                     
                     'ngrok-skip-browser-warning' => 'true'

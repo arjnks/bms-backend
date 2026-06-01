@@ -27,7 +27,7 @@ class SyncBillsController extends Controller
         $toDate   = now()->format('Y-m-d');
 
         // Include customers with either external_cucode or customer_code set
-        $customers = Customer::where(function($q) {
+        $customers = Customer::with('user')->where(function($q) {
             $q->whereNotNull('external_cucode')
               ->orWhereNotNull('customer_code');
         })->get()->map(function ($c) {
@@ -70,32 +70,86 @@ class SyncBillsController extends Controller
                         $customer->update(['external_cucode' => $customer->_effective_cucode]);
                     }
 
-                    foreach ($data['data'] as $bill) {
-                        $invoiceNo = $bill['BILLNO'] ?? $bill['BN'] ?? null;
+                    $billingService = app(\App\Services\ExternalBillingService::class);
+
+                    foreach ($data['data'] as $billData) {
+                        $invoiceNo = $billData['BILLNO'] ?? $billData['BN'] ?? null;
                         if (!$invoiceNo) continue;
 
-                        $billDate = isset($bill['DATE'])
-                            ? \Carbon\Carbon::parse($bill['DATE'])
+                        $billDate = isset($billData['DATE'])
+                            ? \Carbon\Carbon::parse($billData['DATE'])
                             : now();
 
                         // Bills older than 30 days with no payment = overdue
                         $dueDate      = $billDate->copy()->addDays(30);
                         $isPastDue    = $dueDate->isPast();
-                        $paymentStatus = $isPastDue ? 'unpaid' : 'unpaid'; // keep unpaid; status field tracks overdue
 
-                        Bill::updateOrCreate(
-                            ['invoice_no' => (string)$invoiceNo],
-                            [
-                                'customer_id'    => $customerId,
-                                'bill_date'      => $billDate->format('Y-m-d'),
-                                'due_date'       => $dueDate->format('Y-m-d'),
-                                'grand_total'    => $bill['NETAMOUNT'] ?? 0,
-                                'subtotal'       => $bill['NETAMOUNT'] ?? 0,
-                                'gst_total'      => 0,
-                                'status'         => $isPastDue ? 'overdue' : 'unpaid',
-                                'payment_status' => 'unpaid',
-                            ]
-                        );
+                        $bill = Bill::firstOrNew(['invoice_no' => (string)$invoiceNo]);
+                        $bill->customer_id = $customerId;
+                        $bill->bill_date = $billDate->format('Y-m-d');
+                        $bill->due_date = $dueDate->format('Y-m-d');
+                        $bill->grand_total = $billData['NETAMOUNT'] ?? 0;
+                        $bill->subtotal = $billData['NETAMOUNT'] ?? 0;
+                        if (!$bill->exists) {
+                            $bill->payment_status = 'unpaid';
+                            $bill->status = $isPastDue ? 'overdue' : 'unpaid';
+                        } else {
+                            if ($bill->payment_status === 'unpaid' && $isPastDue) {
+                                $bill->status = 'overdue';
+                            }
+                        }
+                        $bill->save();
+
+                        // Pre-generate and upload file to cloud if missing
+                        if (empty($bill->bill_file_url)) {
+                            // Extract numeric ID
+                            preg_match('/(\d+)$/', $bill->invoice_no, $matches);
+                            $numericId = (int) ($matches[1] ?? $bill->invoice_no);
+
+                            $items = $billingService->getBillDetails($numericId);
+                            
+                            if (!empty($items)) {
+                                $customerName = $customer->user->name ?? 'Customer';
+                                $format = $customer->preferred_bill_format ?? 'pdf';
+                                
+                                $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
+                                $bDate = $items[0]['BILLDATE'] ?? $billDate->format('Y-m-d');
+
+                                switch ($format) {
+                                    case 'pdf':
+                                        $path     = $billingService->generatePdf($items, $billNoStr, $bDate, $customerName);
+                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.pdf";
+                                        $mime     = 'application/pdf';
+                                        break;
+                                    case 'csv':
+                                        $path     = $billingService->generateCsv($items, $billNoStr);
+                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.csv";
+                                        $mime     = 'text/csv';
+                                        break;
+                                    default: // excel
+                                        $path     = $billingService->generateExcel($items, $billNoStr, $bDate);
+                                        $filename = "bills/{$customer->_effective_cucode}/bill_{$billNoStr}.xlsx";
+                                        $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                                        break;
+                                }
+
+                                try {
+                                    $file = new \Illuminate\Http\File($path);
+                                    \Illuminate\Support\Facades\Storage::disk('s3')->putFileAs('', $file, $filename, [
+                                        'visibility' => 'public',
+                                        'ContentType' => $mime
+                                    ]);
+                                    
+                                    $url = \Illuminate\Support\Facades\Storage::disk('s3')->url($filename);
+                                    $bill->update(['bill_file_url' => $url]);
+                                } catch (\Exception $e) {
+                                    Log::error('S3 Upload Failed', ['error' => $e->getMessage()]);
+                                }
+                                
+                                @unlink($path);
+                            }
+                        }
+
                         $totalSynced++;
                     }
                 } catch (\Exception $e) {
