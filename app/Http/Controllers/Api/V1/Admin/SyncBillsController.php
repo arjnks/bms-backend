@@ -26,7 +26,16 @@ class SyncBillsController extends Controller
         $fromDate = now()->subMonths(24)->format('Y-m-d');
         $toDate   = now()->format('Y-m-d');
 
-        $customers = Customer::whereNotNull('external_cucode')->get();
+        // Include customers with either external_cucode or customer_code set
+        $customers = Customer::where(function($q) {
+            $q->whereNotNull('external_cucode')
+              ->orWhereNotNull('customer_code');
+        })->get()->map(function ($c) {
+            // Normalise: use external_cucode, fall back to customer_code
+            $c->_effective_cucode = $c->external_cucode ?: $c->customer_code;
+            return $c;
+        })->filter(fn($c) => !empty($c->_effective_cucode));
+
         $totalSynced = 0;
         $errors = 0;
 
@@ -39,7 +48,7 @@ class SyncBillsController extends Controller
                          ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                          ->asMultipart()
                          ->post("$baseUrl/API/announcements/bill_master.php", [
-                             ['name' => 'cucode',    'contents' => $c->external_cucode],
+                             ['name' => 'cucode',    'contents' => $c->_effective_cucode],
                              ['name' => 'from_date', 'contents' => $fromDate],
                              ['name' => 'to_date',   'contents' => $toDate],
                          ])
@@ -55,6 +64,12 @@ class SyncBillsController extends Controller
                     $data = $response->json();
                     if (!isset($data['data']) || !is_array($data['data'])) continue;
 
+                    // Also persist the effective cucode so future syncs work without fallback
+                    $customer = $chunk->firstWhere('id', $customerId);
+                    if ($customer && empty($customer->external_cucode)) {
+                        $customer->update(['external_cucode' => $customer->_effective_cucode]);
+                    }
+
                     foreach ($data['data'] as $bill) {
                         $invoiceNo = $bill['BILLNO'] ?? $bill['BN'] ?? null;
                         if (!$invoiceNo) continue;
@@ -63,14 +78,17 @@ class SyncBillsController extends Controller
                             ? \Carbon\Carbon::parse($bill['DATE'])
                             : now();
 
-                        $isPastDue = $billDate->copy()->addDays(30)->isPast();
+                        // Bills older than 30 days with no payment = overdue
+                        $dueDate      = $billDate->copy()->addDays(30);
+                        $isPastDue    = $dueDate->isPast();
+                        $paymentStatus = $isPastDue ? 'unpaid' : 'unpaid'; // keep unpaid; status field tracks overdue
 
                         Bill::updateOrCreate(
                             ['invoice_no' => (string)$invoiceNo],
                             [
                                 'customer_id'    => $customerId,
                                 'bill_date'      => $billDate->format('Y-m-d'),
-                                'due_date'       => $billDate->copy()->addDays(30)->format('Y-m-d'),
+                                'due_date'       => $dueDate->format('Y-m-d'),
                                 'grand_total'    => $bill['NETAMOUNT'] ?? 0,
                                 'subtotal'       => $bill['NETAMOUNT'] ?? 0,
                                 'gst_total'      => 0,

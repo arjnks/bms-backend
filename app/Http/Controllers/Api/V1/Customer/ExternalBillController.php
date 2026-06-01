@@ -21,9 +21,13 @@ class ExternalBillController extends Controller
         if (!$customer) {
             abort(403, 'No customer profile found.');
         }
-        if (!$customer->external_cucode) {
+        // Use external_cucode first, fall back to customer_code (both store the ERP cucode)
+        $cucode = $customer->external_cucode ?: $customer->customer_code;
+        if (!$cucode) {
             abort(422, 'Your account is not linked to the billing system yet. Please contact admin.');
         }
+        // Normalise so all downstream methods always read external_cucode
+        $customer->external_cucode = $cucode;
         return $customer;
     }
 

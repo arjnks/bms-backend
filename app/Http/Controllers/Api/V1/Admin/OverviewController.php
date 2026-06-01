@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-
 use App\Models\Bill;
 use App\Models\ReminderLog;
 use Carbon\Carbon;
@@ -13,100 +11,87 @@ class OverviewController extends Controller
 {
     public function index()
     {
-        $today = Carbon::today();
+        $today     = Carbon::today();
         $thisMonth = Carbon::now()->startOfMonth();
+        $thirtyAgo = Carbon::today()->subDays(30);
 
-        // Dues This Month
+        // Total outstanding: sum of ALL unpaid/rejected bills (not just this month)
         $totalOutstanding = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->where('bill_date', '>=', $thisMonth)
             ->sum('grand_total');
 
-        // Bills Sent Today (Live from ERP, falls back to local DB if ERP unreachable)
-        $billsToday = 0;
-        try {
-            $erpUrl = rtrim(config('services.external_billing.url', ''), '/');
-            if ($erpUrl) {
-                $res = \Illuminate\Support\Facades\Http::timeout(5)->withHeaders([
-                    'ngrok-skip-browser-warning' => 'true'
-                ])->get($erpUrl . '/API/announcements/bill_master.php');
-                if ($res->successful()) {
-                    $bills = $res->json();
-                    if (is_array($bills)) {
-                        $billsToday = collect($bills)->filter(function($b) use ($today) {
-                            try {
-                                $dateField = $b['DATE'] ?? $b['bill_date'] ?? null;
-                                return $dateField && Carbon::parse($dateField)->isSameDay($today);
-                            } catch (\Exception $e) { return false; }
-                        })->count();
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            // ERP unreachable — silently fall through to local count
-        }
-        if ($billsToday === 0) {
-            $billsToday = Bill::whereDate('bill_date', $today)->count();
-        }
+        // Bills sent today: bills in local DB with today's bill_date
+        // (updates correctly after each ERP sync)
+        $billsToday = Bill::whereDate('bill_date', $today)->count();
 
-        // Total Customers
+        // Total customers
         $totalCustomers = \App\Models\User::where('role', 'customer')->count();
 
-        // Overdue Count
+        // Overdue count: unpaid bills where due_date has already passed
+        // Also catches bills without a due_date but bill_date is > 30 days old
         $overdueCount = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->whereDate('due_date', '<', $today)
+            ->where(function ($q) use ($today, $thirtyAgo) {
+                $q->where(function ($q2) use ($today) {
+                    // explicit due_date that has passed
+                    $q2->whereNotNull('due_date')
+                       ->whereDate('due_date', '<', $today);
+                })->orWhere(function ($q2) use ($thirtyAgo) {
+                    // no due_date but bill is older than 30 days
+                    $q2->whereNull('due_date')
+                       ->whereDate('bill_date', '<', $thirtyAgo);
+                });
+            })
             ->count();
 
-        // Collection Rate (paid bills vs total bills this month)
-        $totalBillsThisMonth = Bill::where('bill_date', '>=', $thisMonth)->count();
-        $paidBillsThisMonth = Bill::where('payment_status', 'paid')
-            ->where('bill_date', '>=', $thisMonth)
-            ->count();
+        // Total unpaid bill count (useful for context in the UI)
+        $totalUnpaid = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])->count();
 
-        $collectionRate = $totalBillsThisMonth > 0 
-            ? round(($paidBillsThisMonth / $totalBillsThisMonth) * 100, 1) 
+        // Collection Rate: paid bills / total bills (all time)
+        $totalBills = Bill::count();
+        $paidBills  = Bill::where('payment_status', 'paid')->count();
+        $collectionRate = $totalBills > 0
+            ? round(($paidBills / $totalBills) * 100, 1)
             : 0;
 
         $remindersThisMonth = ReminderLog::where('sent_at', '>=', $thisMonth)->count();
 
         // Chart: Payment Status Breakdown
-        $paidCount = Bill::where('payment_status', 'paid')->count();
+        $paidCount    = $paidBills;
         $dueSoonCount = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
+            ->whereNotNull('due_date')
             ->whereDate('due_date', '>=', $today)
             ->count();
-        // $overdueCount is already calculated above
 
         $chartPaymentStatus = [
-            ['name' => 'Paid', 'value' => $paidCount, 'color' => '#166534'],
+            ['name' => 'Paid',     'value' => $paidCount,    'color' => '#166534'],
             ['name' => 'Due soon', 'value' => $dueSoonCount, 'color' => '#b45309'],
-            ['name' => 'Overdue', 'value' => $overdueCount, 'color' => '#c0392b'],
+            ['name' => 'Overdue',  'value' => $overdueCount, 'color' => '#c0392b'],
         ];
 
-        // Chart: Collections (Last 6 months for overview)
+        // Chart: Collections (last 6 months)
         $chartCollections = [];
         for ($i = 5; $i >= 0; $i--) {
             $monthStart = Carbon::now()->subMonths($i)->startOfMonth();
-            $monthEnd = Carbon::now()->subMonths($i)->endOfMonth();
-            $monthLabel = $monthStart->format('M');
-            
-            $collected = Bill::where('payment_status', 'paid')
+            $monthEnd   = Carbon::now()->subMonths($i)->endOfMonth();
+            $collected  = Bill::where('payment_status', 'paid')
                 ->whereBetween('payment_verified_at', [$monthStart, $monthEnd])
                 ->sum('grand_total');
-
             $chartCollections[] = [
-                'month' => $monthLabel,
+                'month'  => $monthStart->format('M'),
                 'amount' => (float) $collected,
             ];
         }
 
         return response()->json([
-            'total_customers' => $totalCustomers,
-            'total_outstanding' => (float) $totalOutstanding,
-            'bills_today' => $billsToday,
-            'overdue_count' => $overdueCount,
-            'collection_rate' => $collectionRate,
+            'total_customers'      => $totalCustomers,
+            'total_outstanding'    => (float) $totalOutstanding,
+            'bills_today'          => $billsToday,
+            'overdue_count'        => $overdueCount,
+            'total_unpaid'         => $totalUnpaid,
+            'total_bills'          => $totalBills,
+            'collection_rate'      => $collectionRate,
             'reminders_this_month' => $remindersThisMonth,
             'chart_payment_status' => $chartPaymentStatus,
-            'chart_collections' => $chartCollections,
+            'chart_collections'    => $chartCollections,
         ]);
     }
 }

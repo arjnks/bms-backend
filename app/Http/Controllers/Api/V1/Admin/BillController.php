@@ -11,6 +11,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
@@ -93,7 +94,16 @@ class BillController extends Controller
 
     public function show($id)
     {
-        $bill = Bill::with(['customer.user', 'lineItems'])->findOrFail($id);
+        $bill = Bill::with(['customer.user'])->findOrFail($id);
+
+        // Attempt to eager-load line items — gracefully handle missing table
+        $lineItems = collect();
+        try {
+            $lineItems = $bill->lineItems;
+        } catch (\Illuminate\Database\QueryException $e) {
+            // bill_line_items table may not exist yet — migration pending
+            Log::warning('bill_line_items table missing, skipping line items', ['error' => $e->getMessage()]);
+        }
 
         $proofUrl = null;
         if ($bill->proof_screenshot) {
@@ -121,7 +131,7 @@ class BillController extends Controller
             'payment_verified_at'  => $bill->payment_verified_at,
             'rejection_reason'     => $bill->rejection_reason,
             'bill_file_type'       => $bill->bill_file_type,
-            'line_items'           => $bill->lineItems,
+            'line_items'           => $lineItems->values(),
         ]);
     }
 
