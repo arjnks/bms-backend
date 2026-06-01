@@ -138,15 +138,3 @@ Route::get('/cleanup-dummies', function() {
     $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
     return ['deleted' => $count];
 });
-<?php
-use Illuminate\Support\Facades\Route;
-Route::get("/debug-request", function(\Illuminate\Http\Request $req) {
-    return [
-        "url" => $req->url(),
-        "fullUrl" => $req->fullUrl(),
-        "scheme" => $req->getScheme(),
-        "isSecure" => $req->secure(),
-        "headers" => $req->headers->all()
-    ];
-});
-
