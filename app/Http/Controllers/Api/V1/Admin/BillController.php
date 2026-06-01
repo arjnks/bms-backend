@@ -189,12 +189,13 @@ class BillController extends Controller
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
-        // Local uploads and ERP-sourced bills are streamed through Railway.
-        $url = URL::temporarySignedRoute(
-            'bills.download.stream',
-            now()->addMinutes(30),
-            ['id' => $bill->id]
-        );
+        $token = \Illuminate\Support\Str::random(64);
+        \Illuminate\Support\Facades\Cache::put("bill_token_{$token}", [
+            'id' => $bill->id,
+            'customer_id' => null, // Admin doesn't need customer verification
+        ], now()->addMinutes(30));
+
+        $url = url("/api/v1/customer/bills/stream-token/{$token}");
         return response()->json(['download_url' => $url]);
     }
 
