@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 
 class BillController extends Controller
@@ -88,6 +89,60 @@ class BillController extends Controller
         });
 
         return response()->json($bills);
+    }
+
+    public function show($id)
+    {
+        $bill = Bill::with(['customer.user', 'lineItems'])->findOrFail($id);
+
+        $proofUrl = null;
+        if ($bill->proof_screenshot) {
+            try { $proofUrl = Storage::disk('public')->url($bill->proof_screenshot); } catch (\Exception $e) {}
+        }
+
+        return response()->json([
+            'id'                   => $bill->id,
+            'invoice_no'           => $bill->invoice_no,
+            'customer_id'          => $bill->customer?->id,
+            'customer_name'        => $bill->customer?->user?->name ?? '—',
+            'customer_code'        => $bill->customer?->customer_code ?? null,
+            'bill_date'            => $bill->bill_date?->format('d M Y'),
+            'due_date'             => $bill->due_date?->format('d M Y'),
+            'subtotal'             => $bill->subtotal,
+            'gst_total'            => $bill->gst_total,
+            'grand_total'          => $bill->grand_total,
+            'status'               => $bill->status,
+            'payment_status'       => $bill->payment_status,
+            'payment_method'       => $bill->payment_method,
+            'utr_number'           => $bill->utr_number,
+            'proof_screenshot'     => $bill->proof_screenshot,
+            'proof_url'            => $proofUrl,
+            'payment_submitted_at' => $bill->payment_submitted_at,
+            'payment_verified_at'  => $bill->payment_verified_at,
+            'rejection_reason'     => $bill->rejection_reason,
+            'bill_file_type'       => $bill->bill_file_type,
+            'line_items'           => $bill->lineItems,
+        ]);
+    }
+
+    public function download($id)
+    {
+        $bill = Bill::findOrFail($id);
+
+        if ($bill->bill_file_url) {
+            try {
+                $url = Storage::disk('public')->url($bill->bill_file_url);
+                return response()->json(['download_url' => $url]);
+            } catch (\Exception $e) {}
+        }
+
+        // ERP-sourced bill — generate a signed stream URL (valid 30 min)
+        $url = URL::temporarySignedRoute(
+            'bills.download.stream',
+            now()->addMinutes(30),
+            ['id' => $bill->id]
+        );
+        return response()->json(['download_url' => $url]);
     }
 
     public function store(Request $request)

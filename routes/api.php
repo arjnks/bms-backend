@@ -27,9 +27,14 @@ Route::prefix('v1')->group(function () {
         return ['deleted' => $count];
     });
 
-    // Signed route for downloading generated manual bills
+    // Signed route for downloading generated manual bills (no auth, signature validates)
     Route::get('/customer/bills/{id}/stream', [CustomerBillController::class, 'stream'])
         ->name('bills.download.stream')
+        ->middleware('signed');
+
+    // Signed route for downloading live ERP bills directly from Railway (bypasses Vercel proxy)
+    Route::get('/customer/external-bills/{billno}/stream', [ExternalBillController::class, 'stream'])
+        ->name('external.bills.stream')
         ->middleware('signed');
 
     Route::middleware('auth:sanctum')->group(function () {
@@ -60,6 +65,8 @@ Route::prefix('v1')->group(function () {
             // Bills
             Route::get('/bills', [AdminBillController::class, 'index']);
             Route::post('/bills', [AdminBillController::class, 'store']);
+            Route::get('/bills/{id}', [AdminBillController::class, 'show']);
+            Route::get('/bills/{id}/download', [AdminBillController::class, 'download']);
             Route::post('/bills/{id}/mark-paid', [AdminBillController::class, 'markPaid']);
             Route::post('/bills/{id}/verify-payment', [AdminBillController::class, 'verifyPayment']);
             Route::post('/bills/{id}/reject-payment', [AdminBillController::class, 'rejectPayment']);
@@ -105,6 +112,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/external-bills', [ExternalBillController::class, 'index']);
             Route::get('/external-bills/{billno}', [ExternalBillController::class, 'show']);
             Route::get('/external-bills/{billno}/download', [ExternalBillController::class, 'download']);
+            // Signed URL generator — returns Railway-direct URL, avoids Vercel proxy for binary files
+            Route::get('/external-bills/{billno}/download-url', [ExternalBillController::class, 'downloadUrl']);
         });
     });
 });

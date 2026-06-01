@@ -83,6 +83,67 @@ class ExternalBillController extends Controller
     }
 
     /**
+     * Get a signed URL to download this ERP bill directly from Railway (bypasses Vercel proxy).
+     * GET /customer/external-bills/{billno}/download-url
+     */
+    public function downloadUrl(Request $request, int $billno)
+    {
+        $customer = $this->getCustomer($request);
+        $format   = $customer->preferred_bill_format ?? 'excel';
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'external.bills.stream',
+            now()->addMinutes(15),
+            ['billno' => $billno, 'format' => $format]
+        );
+        return response()->json(['download_url' => $url]);
+    }
+
+    /**
+     * Signed stream handler — no auth needed, URL signature validates access.
+     * GET /customer/external-bills/{billno}/stream  (signed)
+     */
+    public function stream(Request $request, int $billno)
+    {
+        if (!$request->hasValidSignature()) {
+            abort(403, 'Download link has expired. Please request a new one.');
+        }
+
+        $format = $request->query('format', 'excel');
+        $items  = $this->billing->getBillDetails($billno);
+
+        if (empty($items)) {
+            abort(404, 'Bill details not found in ERP.');
+        }
+
+        $billNoStr    = (string)($items[0]['BILLNO'] ?? $billno);
+        $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
+        $customerName = '';
+
+        switch ($format) {
+            case 'pdf':
+                $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $filename = "bill_{$billno}.pdf";
+                $mime     = 'application/pdf';
+                break;
+            case 'csv':
+                $path     = $this->billing->generateCsv($items, $billNoStr);
+                $filename = "bill_{$billno}.csv";
+                $mime     = 'text/csv';
+                break;
+            default:
+                $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
+                $filename = "bill_{$billno}.xlsx";
+                $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        }
+
+        return response()->download($path, $filename, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ])->deleteFileAfterSend(true);
+    }
+
+    /**
      * Download bill in customer's preferred format.
      * GET /customer/external-bills/{billno}/download
      */
