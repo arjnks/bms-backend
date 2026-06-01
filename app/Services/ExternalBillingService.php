@@ -265,7 +265,7 @@ class ExternalBillingService
     {
         $netAmount = $items[0]['NETAMOUNT'] ?? 0;
         $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount'))
-            ->setPaper('a4', 'landscape');
+            ->setPaper('a4', 'portrait');
 
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
