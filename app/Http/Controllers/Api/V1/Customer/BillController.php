@@ -126,8 +126,24 @@ class BillController extends Controller
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
-        $url = URL::temporarySignedRoute('bills.download.stream', now()->addMinutes(30), ['id' => $bill->id]);
+        $token = \Illuminate\Support\Str::random(64);
+        \Illuminate\Support\Facades\Cache::put("bill_token_{$token}", [
+            'id' => $bill->id,
+            'customer_id' => $customerId,
+        ], now()->addMinutes(30));
+
+        $url = url("/api/v1/customer/bills/stream-token/{$token}");
         return response()->json(['download_url' => $url]);
+    }
+
+    public function streamByToken(Request $request, $token, ExternalBillingService $billingService)
+    {
+        $data = \Illuminate\Support\Facades\Cache::get("bill_token_{$token}");
+        if (!$data) {
+            return response()->json(['message' => 'Invalid or expired token.'], 403);
+        }
+
+        return $this->stream($request, $data['id'], $billingService);
     }
 
     public function stream(Request $request, $id, ExternalBillingService $billingService)

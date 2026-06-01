@@ -27,10 +27,9 @@ Route::prefix('v1')->group(function () {
         return ['deleted' => $count];
     });
 
-    // Signed route for downloading generated manual bills (no auth, signature validates)
-    Route::get('/customer/bills/{id}/stream', [CustomerBillController::class, 'stream'])
-        ->name('bills.download.stream')
-        ->middleware('signed');
+    // Token route for downloading generated manual bills (bypasses Vercel proxy)
+    Route::get('/customer/bills/stream-token/{token}', [CustomerBillController::class, 'streamByToken'])
+        ->name('bills.download.stream');
 
     // Token route for downloading live ERP bills directly from Railway (bypasses Vercel proxy)
     Route::get('/customer/external-bills/stream-token/{token}', [ExternalBillController::class, 'streamByToken'])
