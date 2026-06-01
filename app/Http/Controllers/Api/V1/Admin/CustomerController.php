@@ -283,9 +283,12 @@ class CustomerController extends Controller
         $r2Path = $billing->getCachedFilePath('pdf', $billno);
 
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillno}.pdf", [
+            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillno}.pdf", [
                 'Content-Type' => 'application/pdf',
             ]);
+            $response->headers->set('Access-Control-Allow-Origin', '*');
+            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+            return $response;
         }
 
         preg_match('/(\d+)$/', $billno, $matches);
@@ -308,8 +311,11 @@ class CustomerController extends Controller
         // This now generates, uploads to R2, and returns the R2 path
         $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
         
-        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, "bill_{$safeBillno}.pdf", [
+        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, "bill_{$safeBillno}.pdf", [
             'Content-Type' => 'application/pdf',
         ]);
+        $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+        return $response;
     }
 }

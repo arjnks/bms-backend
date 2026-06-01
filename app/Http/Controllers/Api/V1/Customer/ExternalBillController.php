@@ -141,7 +141,10 @@ class ExternalBillController extends Controller
         
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
             $ext = $format === 'excel' ? 'xlsx' : $format;
-            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+            $response->headers->set('Access-Control-Allow-Origin', '*');
+            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+            return $response;
         }
 
         $items  = $this->billing->getBillDetails($numericId);
@@ -173,9 +176,12 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
+        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
             'Content-Type' => $mime,
         ]);
+        $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+        return $response;
     }
 
     /**
@@ -201,7 +207,10 @@ class ExternalBillController extends Controller
         
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
             $ext = $format === 'excel' ? 'xlsx' : $format;
-            return \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+            $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
+            $response->headers->set('Access-Control-Allow-Origin', '*');
+            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+            return $response;
         }
 
         preg_match('/(\d+)$/', $billno, $matches);
@@ -236,8 +245,11 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        return \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
+        $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($path, $filename, [
             'Content-Type' => $mime,
         ]);
+        $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
+        return $response;
     }
 }
