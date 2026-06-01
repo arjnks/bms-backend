@@ -246,7 +246,10 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
         }
 
-        $items = $billing->getBillDetails((int) $billno);
+        preg_match('/(\d+)$/', $billno, $matches);
+        $numericId = (int) ($matches[1] ?? $billno);
+
+        $items = $billing->getBillDetails($numericId);
 
         if (empty($items)) {
             return response()->json(['status' => 'error', 'message' => 'Bill not found or no items.'], 404);
@@ -276,7 +279,10 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
         }
 
-        $items = $billing->getBillDetails((int) $billno);
+        preg_match('/(\d+)$/', $billno, $matches);
+        $numericId = (int) ($matches[1] ?? $billno);
+
+        $items = $billing->getBillDetails($numericId);
 
         if (empty($items)) {
             return response()->json(['message' => 'Bill not found.'], 404);

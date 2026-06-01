@@ -64,11 +64,14 @@ class ExternalBillController extends Controller
      * Get line items for a specific bill.
      * GET /customer/external-bills/{billno}
      */
-    public function show(Request $request, int $billno)
+    public function show(Request $request, string $billno)
     {
         $this->getCustomer($request); // validates customer is linked
 
-        $items = $this->billing->getBillDetails($billno);
+        preg_match('/(\d+)$/', $billno, $matches);
+        $numericId = (int) ($matches[1] ?? $billno);
+
+        $items = $this->billing->getBillDetails($numericId);
 
         if (empty($items)) {
             return response()->json(['status' => 'error', 'message' => 'Bill not found or no items.'], 404);
@@ -90,7 +93,7 @@ class ExternalBillController extends Controller
      * Get a signed URL to download this ERP bill directly from Railway (bypasses Vercel proxy).
      * GET /customer/external-bills/{billno}/download-url
      */
-    public function downloadUrl(Request $request, int $billno)
+    public function downloadUrl(Request $request, string $billno)
     {
         $customer = $this->getCustomer($request);
         
@@ -116,14 +119,17 @@ class ExternalBillController extends Controller
      * Signed stream handler — no auth needed, URL signature validates access.
      * GET /customer/external-bills/{billno}/stream  (signed)
      */
-    public function stream(Request $request, int $billno)
+    public function stream(Request $request, string $billno)
     {
         if (!$request->hasValidSignature()) {
             abort(403, 'Download link has expired. Please request a new one.');
         }
 
+        preg_match('/(\d+)$/', $billno, $matches);
+        $numericId = (int) ($matches[1] ?? $billno);
+
         $format = $request->query('format', 'excel');
-        $items  = $this->billing->getBillDetails($billno);
+        $items  = $this->billing->getBillDetails($numericId);
 
         if (empty($items)) {
             abort(404, 'Bill details not found in ERP.');
@@ -162,7 +168,7 @@ class ExternalBillController extends Controller
      * Download bill in customer's preferred format.
      * GET /customer/external-bills/{billno}/download
      */
-    public function download(Request $request, int $billno)
+    public function download(Request $request, string $billno)
     {
         $customer = $this->getCustomer($request);
         
@@ -176,7 +182,10 @@ class ExternalBillController extends Controller
         
         $format   = $customer->preferred_bill_format ?? 'excel';
 
-        $items = $this->billing->getBillDetails($billno);
+        preg_match('/(\d+)$/', $billno, $matches);
+        $numericId = (int) ($matches[1] ?? $billno);
+
+        $items = $this->billing->getBillDetails($numericId);
 
         if (empty($items)) {
             return response()->json(['message' => 'Bill not found.'], 404);
