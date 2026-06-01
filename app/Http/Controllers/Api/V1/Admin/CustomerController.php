@@ -287,6 +287,7 @@ class CustomerController extends Controller
                 'Content-Type' => 'application/pdf',
             ]);
             $response->headers->set('Access-Control-Allow-Origin', '*');
+            $response->headers->remove('Access-Control-Allow-Credentials');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
             return $response;
         }
@@ -315,6 +316,7 @@ class CustomerController extends Controller
             'Content-Type' => 'application/pdf',
         ]);
         $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->remove('Access-Control-Allow-Credentials');
         $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
         return $response;
     }

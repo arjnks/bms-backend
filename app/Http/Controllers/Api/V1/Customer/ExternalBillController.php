@@ -143,6 +143,7 @@ class ExternalBillController extends Controller
             $ext = $format === 'excel' ? 'xlsx' : $format;
             $response = \Illuminate\Support\Facades\Storage::disk('r2')->download($r2Path, "bill_{$safeBillNo}.{$ext}");
             $response->headers->set('Access-Control-Allow-Origin', '*');
+            $response->headers->remove('Access-Control-Allow-Credentials');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition');
             return $response;
         }
