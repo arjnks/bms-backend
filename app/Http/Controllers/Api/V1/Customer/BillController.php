@@ -170,7 +170,7 @@ class BillController extends Controller
         }
 
         $customerName = $bill->customer->user->name ?? 'Customer';
-        $format = $bill->customer->preferred_bill_format ?? 'pdf';
+        $format = $request->query('format') ?? $bill->customer->preferred_bill_format ?? 'pdf';
         
         $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
         $billDate = $items[0]['BILLDATE'] ?? ($bill->bill_date ? $bill->bill_date->format('Y-m-d') : now()->format('Y-m-d'));

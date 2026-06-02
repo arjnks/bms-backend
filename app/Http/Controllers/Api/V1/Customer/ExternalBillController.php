@@ -202,7 +202,7 @@ class ExternalBillController extends Controller
             return $bill->bill_file_url;
         }
         
-        $format   = $customer->preferred_bill_format ?? 'excel';
+        $format   = $request->query('format') ?? $customer->preferred_bill_format ?? 'excel';
 
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
