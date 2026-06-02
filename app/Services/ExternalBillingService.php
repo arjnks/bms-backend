@@ -225,6 +225,11 @@ class ExternalBillingService
             $ptr = $item['SRATE'] ?? 0;
             $amount = round($qty * $ptr, 2);
 
+            $expiry = '';
+            if (!empty($item['EXPIRYDATE'])) {
+                $expiry = \Carbon\Carbon::parse($item['EXPIRYDATE'])->format('d-m-Y');
+            }
+
             fputcsv($fp, [
                 $billNo,
                 $billDate,
@@ -233,7 +238,7 @@ class ExternalBillingService
                 $item['ITEMNAME'] ?? '',
                 $item['PACKING'] ?? '',
                 $item['BATCHNO'] ?? '',
-                $item['EXPIRYDATE'] ?? '',
+                $expiry,
                 $qty,
                 $item['FREE'] ?? 0,
                 $ptr,
