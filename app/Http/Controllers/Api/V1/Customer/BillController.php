@@ -130,7 +130,7 @@ class BillController extends Controller
             'customer_id' => $customerId,
         ], now()->addMinutes(30));
 
-        $url = url("/api/v1/customer/bills/stream-token/{$token}");
+        $url = "/api/v1/customer/bills/stream-token/{$token}";
         return response()->json(['download_url' => $url]);
     }
 

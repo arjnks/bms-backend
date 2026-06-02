@@ -190,7 +190,7 @@ class BillController extends Controller
             'customer_id' => null, // Admin doesn't need customer verification
         ], now()->addMinutes(30));
 
-        $url = url("/api/v1/customer/bills/stream-token/{$token}");
+        $url = "/api/v1/customer/bills/stream-token/{$token}";
         return response()->json(['download_url' => $url]);
     }
 

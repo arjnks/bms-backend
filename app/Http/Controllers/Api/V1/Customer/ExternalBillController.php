@@ -112,7 +112,7 @@ class ExternalBillController extends Controller
         \Illuminate\Support\Facades\Cache::put("bill_dl_{$token}", ['billno' => $billno, 'format' => $format], now()->addMinutes(15));
 
         // Return the tokenized download URL
-        $url = url("/api/v1/customer/external-bills/stream-token/{$token}");
+        $url = "/api/v1/customer/external-bills/stream-token/{$token}";
         return response()->json(['download_url' => $url]);
     }
 

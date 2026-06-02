@@ -26,15 +26,19 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $customers = Customer::with('user:id,name,email,phone')
-            ->withSum(['bills as outstanding_amount' => function($q) {
-                $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
-            }], 'grand_total')
-            ->withMin(['bills as nearest_due_date' => function($q) {
-                $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
-            }], 'due_date')
+            ->withSum([
+                'bills as outstanding_amount' => function ($q) {
+                    $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
+                }
+            ], 'grand_total')
+            ->withMin([
+                'bills as nearest_due_date' => function ($q) {
+                    $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
+                }
+            ], 'due_date')
             ->withMax('reminderLogs as last_reminder_sent', 'sent_at')
             ->get();
-            
+
         $customers = $customers->map(function ($customer) {
             return [
                 'id' => $customer->id,
@@ -101,36 +105,45 @@ class CustomerController extends Controller
     public function update(Request $request, $id)
     {
         $customer = Customer::findOrFail($id);
-        
+
         $validated = $request->validate([
-            'name'                  => 'sometimes|string|max:255',
-            'username'              => ['sometimes', 'nullable', 'string', Rule::unique('users')->ignore($customer->user_id)],
-            'email'                 => ['sometimes', 'email', Rule::unique('users')->ignore($customer->user_id)],
-            'phone'                 => 'nullable|string',
-            'gstin'                 => 'nullable|string',
-            'credit_limit'          => 'nullable|numeric|min:0',
+            'name' => 'sometimes|string|max:255',
+            'username' => ['sometimes', 'nullable', 'string', Rule::unique('users')->ignore($customer->user_id)],
+            'email' => ['sometimes', 'email', Rule::unique('users')->ignore($customer->user_id)],
+            'phone' => 'nullable|string',
+            'gstin' => 'nullable|string',
+            'credit_limit' => 'nullable|numeric|min:0',
             'preferred_bill_format' => ['sometimes', Rule::in(['csv', 'excel', 'pdf'])],
-            'salesperson_id'        => 'nullable|exists:users,id',
-            'external_cucode'       => 'nullable|string|max:50',
+            'salesperson_id' => 'nullable|exists:users,id',
+            'external_cucode' => 'nullable|string|max:50',
         ]);
 
         DB::transaction(function () use ($validated, $customer) {
             if (isset($validated['name']) || array_key_exists('username', $validated) || array_key_exists('email', $validated) || array_key_exists('phone', $validated)) {
                 $userData = [];
-                if (isset($validated['name'])) $userData['name'] = $validated['name'];
-                if (array_key_exists('username', $validated)) $userData['username'] = $validated['username'];
-                if (array_key_exists('email', $validated)) $userData['email'] = $validated['email'];
-                if (array_key_exists('phone', $validated)) $userData['phone'] = $validated['phone'];
+                if (isset($validated['name']))
+                    $userData['name'] = $validated['name'];
+                if (array_key_exists('username', $validated))
+                    $userData['username'] = $validated['username'];
+                if (array_key_exists('email', $validated))
+                    $userData['email'] = $validated['email'];
+                if (array_key_exists('phone', $validated))
+                    $userData['phone'] = $validated['phone'];
                 $customer->user->update($userData);
             }
 
             $customerData = [];
-            if (array_key_exists('gstin', $validated)) $customerData['gstin'] = $validated['gstin'];
-            if (array_key_exists('credit_limit', $validated)) $customerData['credit_limit'] = $validated['credit_limit'];
-            if (isset($validated['preferred_bill_format'])) $customerData['preferred_bill_format'] = $validated['preferred_bill_format'];
-            if (array_key_exists('salesperson_id', $validated)) $customerData['salesperson_id'] = $validated['salesperson_id'];
-            if (array_key_exists('external_cucode', $validated)) $customerData['external_cucode'] = $validated['external_cucode'];
-            
+            if (array_key_exists('gstin', $validated))
+                $customerData['gstin'] = $validated['gstin'];
+            if (array_key_exists('credit_limit', $validated))
+                $customerData['credit_limit'] = $validated['credit_limit'];
+            if (isset($validated['preferred_bill_format']))
+                $customerData['preferred_bill_format'] = $validated['preferred_bill_format'];
+            if (array_key_exists('salesperson_id', $validated))
+                $customerData['salesperson_id'] = $validated['salesperson_id'];
+            if (array_key_exists('external_cucode', $validated))
+                $customerData['external_cucode'] = $validated['external_cucode'];
+
             if (!empty($customerData)) {
                 $customer->update($customerData);
             }
@@ -142,7 +155,7 @@ class CustomerController extends Controller
     public function destroy($id)
     {
         $customer = Customer::with('user')->findOrFail($id);
-        $name     = $customer->user?->name ?? 'Customer';
+        $name = $customer->user?->name ?? 'Customer';
 
         DB::transaction(function () use ($customer) {
             // Delete related data first to respect FK constraints
@@ -166,7 +179,7 @@ class CustomerController extends Controller
         }
 
         $total = $overdueBills->sum('grand_total');
-        
+
         if ($customer->user->phone) {
             $msg = "Hi {$customer->user->name}, your payment of ₹{$total} is overdue. Please log in to your Leo Group portal to view and pay your bills.";
             $this->whatsapp->send($customer->user->phone, $msg);
@@ -194,16 +207,16 @@ class CustomerController extends Controller
 
         foreach ($customers as $customer) {
             $overdueBills = $customer->bills->whereIn('payment_status', ['unpaid', 'proof_rejected']);
-            
+
             if ($overdueBills->isEmpty() || !$customer->user->phone) {
                 continue;
             }
 
             $total = $overdueBills->sum('grand_total');
             $msg = "Hi {$customer->user->name}, you have an outstanding balance of ₹{$total}. Please log in to your Leo Group portal to view and pay your bills.";
-            
+
             $this->whatsapp->send($customer->user->phone, $msg);
-            
+
             ReminderLog::create([
                 'customer_id' => $customer->id,
                 'channel' => 'whatsapp',
@@ -226,7 +239,7 @@ class CustomerController extends Controller
 
         $request->validate([
             'from_date' => 'required|date_format:Y-m-d',
-            'to_date'   => 'required|date_format:Y-m-d|after_or_equal:from_date',
+            'to_date' => 'required|date_format:Y-m-d|after_or_equal:from_date',
         ]);
 
         $bills = $billing->getBills($customer->external_cucode, $request->from_date, $request->to_date);
@@ -234,8 +247,8 @@ class CustomerController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'count'  => count($bills),
-            'data'   => $bills,
+            'count' => count($bills),
+            'data' => $bills,
         ]);
     }
 
@@ -262,11 +275,11 @@ class CustomerController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'count'  => count($items),
-            'data'   => $items,
+            'count' => count($items),
+            'data' => $items,
             'summary' => [
-                'bill_no'    => $items[0]['BILLNO'] ?? '',
-                'bill_date'  => $items[0]['BILLDATE'] ?? '',
+                'bill_no' => $items[0]['BILLNO'] ?? '',
+                'bill_date' => $items[0]['BILLDATE'] ?? '',
                 'net_amount' => $items[0]['NETAMOUNT'] ?? 0,
             ],
         ]);
@@ -300,13 +313,13 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Bill does not belong to this customer.'], 403);
         }
 
-        $billNoStr    = $items[0]['BILLNO'] ?? (string) $billno;
-        $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
+        $billNoStr = $items[0]['BILLNO'] ?? (string) $billno;
+        $billDate = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
         $customerName = $customer->user->name ?? 'Customer';
 
         // This now generates, uploads to R2, and returns the R2 path
         $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-        
+
         $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
         return response()->json(['download_url' => $url]);
     }
