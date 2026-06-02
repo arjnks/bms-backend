@@ -71,12 +71,17 @@ class ExternalBillingService
 
     public function getBillDetails(string $billNo): array
     {
+        // The ERP API throws an SQL error if we pass the full string (e.g. LPH/2627/96609)
+        // It expects only the numeric ID.
+        preg_match('/(\d+)$/', $billNo, $matches);
+        $numericId = $matches[1] ?? $billNo;
+
         try {
             $response = Http::timeout(60)
                 ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
-                    ['name' => 'billno', 'contents' => $billNo]
+                    ['name' => 'billno', 'contents' => (string)$numericId]
                 ]);
 
             if ($response->successful()) {
