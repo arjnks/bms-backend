@@ -111,74 +111,66 @@ class ExternalBillingService
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Bill');
 
-        // Company header
-        $compName = $items[0]['COMPNAME'] ?? 'LEO PHARMA';
-        $sheet->setCellValue('A1', 'LEO GROUP — BILL STATEMENT');
-        $sheet->mergeCells('A1:T1');
-        $sheet->getStyle('A1')->applyFromArray([
-            'font' => ['bold' => true, 'size' => 14],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1a56db']],
-            'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
-        ]);
-
-        $sheet->setCellValue('A2', "Bill No: {$billNo}");
-        $sheet->setCellValue('K2', "Date: {$billDate}");
-        $sheet->mergeCells('A2:J2');
-        $sheet->mergeCells('K2:T2');
-
         // Column headers
         $headers = [
-            'A' => 'Item Name', 'B' => 'Company', 'C' => 'Item Code',
-            'D' => 'Packing', 'E' => 'Batch No', 'F' => 'Expiry',
-            'G' => 'Qty', 'H' => 'Free', 'I' => 'Rate (₹)', 'J' => 'MRP (₹)',
-            'K' => 'Disc %', 'L' => 'Disc Val', 'M' => 'Cash Disc',
-            'N' => 'Taxable', 'O' => 'GST %', 'P' => 'GST Val',
-            'Q' => 'Total (₹)', 'R' => 'HSN Code',
+            'A' => 'BILL NO', 'B' => 'BILL DATE', 'C' => 'COMPANY', 'D' => 'ITEM CODE',
+            'E' => 'ITEM NAME', 'F' => 'PACKING', 'G' => 'BATCH NO', 'H' => 'EXP DT',
+            'I' => 'QTY', 'J' => 'FREE', 'K' => 'PTR', 'L' => 'MRP', 'M' => 'AMOUNT',
+            'N' => 'SCH.DIS%', 'O' => 'DISCOUNT', 'P' => 'DIS AMT', 'Q' => 'TAXABLE AMT',
+            'R' => 'GST %', 'S' => 'GST AMT', 'T' => 'VALUE', 'U' => 'NET AMOUNT', 'V' => 'HSNCODE'
         ];
 
-        $row = 4;
+        $row = 1;
         foreach ($headers as $col => $label) {
             $sheet->setCellValue("{$col}{$row}", $label);
         }
-        $sheet->getStyle("A{$row}:R{$row}")->applyFromArray([
-            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '374151']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+
+        $sheet->getStyle("A1:V1")->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D3D3D3']],
         ]);
 
-        // Data rows
-        $row = 5;
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+
+        $row = 2;
         foreach ($items as $item) {
-            $sheet->setCellValue("A{$row}", $item['ITEMNAME'] ?? '');
-            $sheet->setCellValue("B{$row}", $item['COMPNAME'] ?? '');
-            $sheet->setCellValue("C{$row}", $item['ITEMCODE'] ?? '');
-            $sheet->setCellValue("D{$row}", $item['PACKING'] ?? '');
-            $sheet->setCellValue("E{$row}", $item['BATCHNO'] ?? '');
-            $sheet->setCellValue("F{$row}", $item['EXPIRYDATE'] ?? '');
-            $sheet->setCellValue("G{$row}", $item['QUANTITY'] ?? 0);
-            $sheet->setCellValue("H{$row}", $item['FREE'] ?? 0);
-            $sheet->setCellValue("I{$row}", $item['SRATE'] ?? 0);
-            $sheet->setCellValue("J{$row}", $item['PMRP'] ?? 0);
-            $sheet->setCellValue("K{$row}", $item['DISCOUNT'] ?? 0);
-            $sheet->setCellValue("L{$row}", $item['DISVALUE'] ?? 0);
-            $sheet->setCellValue("M{$row}", $item['CASHDISPER'] ?? 0);
-            $sheet->setCellValue("N{$row}", $item['TAXABLE'] ?? 0);
-            $sheet->setCellValue("O{$row}", $item['GSTRATE'] ?? 0);
-            $sheet->setCellValue("P{$row}", $item['GSTVALUE'] ?? 0);
-            $sheet->setCellValue("Q{$row}", $item['TOTALAMOUNT'] ?? 0);
-            $sheet->setCellValue("R{$row}", $item['HSNCODE'] ?? '');
+            $qty = $item['QUANTITY'] ?? 0;
+            $ptr = $item['SRATE'] ?? 0;
+            $amount = round($qty * $ptr, 2);
+
+            $expiry = '';
+            if (!empty($item['EXPIRYDATE'])) {
+                $expiry = \Carbon\Carbon::parse($item['EXPIRYDATE'])->format('d-m-Y');
+            }
+
+            $sheet->setCellValue("A{$row}", $billNo);
+            $sheet->setCellValue("B{$row}", $billDate);
+            $sheet->setCellValue("C{$row}", $item['COMPNAME'] ?? '');
+            $sheet->setCellValue("D{$row}", $item['ITEMCODE'] ?? '');
+            $sheet->setCellValue("E{$row}", $item['ITEMNAME'] ?? '');
+            $sheet->setCellValue("F{$row}", $item['PACKING'] ?? '');
+            $sheet->setCellValue("G{$row}", $item['BATCHNO'] ?? '');
+            $sheet->setCellValue("H{$row}", $expiry);
+            $sheet->setCellValue("I{$row}", $qty);
+            $sheet->setCellValue("J{$row}", $item['FREE'] ?? 0);
+            $sheet->setCellValue("K{$row}", $ptr);
+            $sheet->setCellValue("L{$row}", $item['PMRP'] ?? 0);
+            $sheet->setCellValue("M{$row}", $amount);
+            $sheet->setCellValue("N{$row}", $item['SCHDISPER'] ?? 0);
+            $sheet->setCellValue("O{$row}", $item['DISCOUNT'] ?? ($item['CASHDISPER'] ?? 0));
+            $sheet->setCellValue("P{$row}", $item['DISVALUE'] ?? 0);
+            $sheet->setCellValue("Q{$row}", $item['TAXABLE'] ?? 0);
+            $sheet->setCellValue("R{$row}", $item['GSTRATE'] ?? 0);
+            $sheet->setCellValue("S{$row}", $item['GSTVALUE'] ?? 0);
+            $sheet->setCellValue("T{$row}", $item['TOTALAMOUNT'] ?? 0);
+            $sheet->setCellValue("U{$row}", $netAmount);
+            $sheet->setCellValue("V{$row}", $item['HSNCODE'] ?? '');
+            
             $row++;
         }
 
-        // Total row
-        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
-        $sheet->setCellValue("N{$row}", 'NET AMOUNT:');
-        $sheet->setCellValue("Q{$row}", $netAmount);
-        $sheet->getStyle("N{$row}:Q{$row}")->getFont()->setBold(true);
-
         // Auto-size columns
-        foreach (range('A', 'R') as $col) {
+        foreach (range('A', 'V') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
