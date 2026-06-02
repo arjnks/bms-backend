@@ -16,3 +16,5 @@ Schedule::command('bms:sync-bills --days=30')->dailyAt('02:00')->withoutOverlapp
 // Hourly incremental sync: keep today's and yesterday's bills fresh so dashboard updates gradually
 Schedule::command('bms:sync-bills --days=2')->hourly()->withoutOverlapping()->runInBackground();
 
+// Sync the 50,000+ record ERP payment statuses API every hour
+Schedule::command('erp:sync-statuses')->hourly()->withoutOverlapping()->runInBackground();

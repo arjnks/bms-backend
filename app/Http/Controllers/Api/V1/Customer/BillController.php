@@ -185,7 +185,7 @@ class BillController extends Controller
                 break;
 
             case 'csv':
-                $path     = $billingService->generateCsv($items, $bill->invoice_no);
+                $path     = $billingService->generateCsv($items, $bill->invoice_no, $billDate);
                 $filename = "bill_{$safeBillNo}.csv";
                 $mime     = 'text/csv';
                 break;

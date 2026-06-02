@@ -158,7 +158,7 @@ class ExternalBillController extends Controller
                 $mime     = 'application/pdf';
                 break;
             case 'csv':
-                $path     = $this->billing->generateCsv($items, $billNoStr);
+                $path     = $this->billing->generateCsv($items, $billNoStr, $billDate);
                 $filename = "bill_{$safeBillNo}.csv";
                 $mime     = 'text/csv';
                 break;
@@ -230,7 +230,7 @@ class ExternalBillController extends Controller
                 break;
 
             case 'csv':
-                $path     = $this->billing->generateCsv($items, $billNoStr);
+                $path     = $this->billing->generateCsv($items, $billNoStr, $billDate);
                 $filename = "bill_{$safeBillNo}.csv";
                 $mime     = 'text/csv';
                 break;

@@ -1,0 +1,1 @@
+<?php require __DIR__."/vendor/autoload.php"; $app = require_once __DIR__."/bootstrap/app.php"; $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class); $kernel->bootstrap(); $billing = app(\App\Services\ExternalBillingService::class); echo count($billing->getCustomers()) . " customers fetched\n";

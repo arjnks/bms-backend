@@ -197,8 +197,14 @@ class ExternalBillingService
     /**
      * Generate a CSV file from bill line items.
      */
-    public function generateCsv(array $items, string $billNo): string
+    public function generateCsv(array $items, string $billNo, string $billDate = ''): string
     {
+        if (empty($billDate)) {
+            $billDate = \Carbon\Carbon::now()->format('d-m-Y');
+        } else {
+            $billDate = \Carbon\Carbon::parse($billDate)->format('d-m-Y');
+        }
+
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.csv';
         $fp = fopen($tmpPath, 'w');
@@ -207,30 +213,40 @@ class ExternalBillingService
         fwrite($fp, "\xEF\xBB\xBF");
 
         fputcsv($fp, [
-            'Item Name', 'Company', 'Item Code', 'Packing', 'Batch No', 'Expiry',
-            'Qty', 'Free', 'Rate', 'MRP', 'Disc%', 'Disc Val', 'Cash Disc',
-            'Taxable', 'GST%', 'GST Val', 'Total', 'HSN Code',
+            'BILL NO', 'BILL DATE', 'COMPANY', 'ITEM CODE', 'ITEM NAME', 'PACKING', 'BATCH NO', 'EXP DT',
+            'QTY', 'FREE', 'PTR', 'MRP', 'AMOUNT', 'SCH.DIS%', 'DISCOUNT', 'DIS AMT', 'TAXABLE AMT',
+            'GST %', 'GST AMT', 'VALUE', 'NET AMOUNT', 'HSNCODE'
         ]);
 
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+
         foreach ($items as $item) {
+            $qty = $item['QUANTITY'] ?? 0;
+            $ptr = $item['SRATE'] ?? 0;
+            $amount = round($qty * $ptr, 2);
+
             fputcsv($fp, [
-                $item['ITEMNAME'] ?? '',
+                $billNo,
+                $billDate,
                 $item['COMPNAME'] ?? '',
                 $item['ITEMCODE'] ?? '',
+                $item['ITEMNAME'] ?? '',
                 $item['PACKING'] ?? '',
                 $item['BATCHNO'] ?? '',
                 $item['EXPIRYDATE'] ?? '',
-                $item['QUANTITY'] ?? 0,
+                $qty,
                 $item['FREE'] ?? 0,
-                $item['SRATE'] ?? 0,
+                $ptr,
                 $item['PMRP'] ?? 0,
-                $item['DISCOUNT'] ?? 0,
+                $amount,
+                $item['SCHDISPER'] ?? 0,
+                $item['DISCOUNT'] ?? ($item['CASHDISPER'] ?? 0),
                 $item['DISVALUE'] ?? 0,
-                $item['CASHDISPER'] ?? 0,
                 $item['TAXABLE'] ?? 0,
                 $item['GSTRATE'] ?? 0,
                 $item['GSTVALUE'] ?? 0,
                 $item['TOTALAMOUNT'] ?? 0,
+                $netAmount,
                 $item['HSNCODE'] ?? '',
             ]);
         }

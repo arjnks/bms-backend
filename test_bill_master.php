@@ -1,8 +1,20 @@
 <?php
-require 'vendor/autoload.php';
-$app = require_once 'bootstrap/app.php';
-$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
-$kernel->bootstrap();
-
-$res = Illuminate\Support\Facades\Http::post('http://192.168.0.186:8080/API/announcements/bill_master.php');
-echo substr($res->body(), 0, 500);
+$opts = [
+    'http' => [
+        'method' => 'POST',
+        'header' => 'Content-Type: application/x-www-form-urlencoded',
+        'content' => http_build_query(['cucode' => '', 'from_date' => date('Y-m-d'), 'to_date' => date('Y-m-d')])
+    ]
+];
+$ctx = stream_context_create($opts);
+$res = file_get_contents('http://192.168.0.186:8080/API/announcements/bill_master.php', false, $ctx);
+if ($res) {
+    $json = json_decode($res, true);
+    if (isset($json['data'])) {
+        echo "COUNT FOR TODAY: " . count($json['data']) . "\n";
+    } else {
+        echo "NO DATA\n";
+    }
+} else {
+    echo "FAILED\n";
+}

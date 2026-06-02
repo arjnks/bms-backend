@@ -145,7 +145,7 @@ class SyncBillsController extends Controller
                                             $mime     = 'application/pdf';
                                             break;
                                         case 'csv':
-                                            $path     = $billingService->generateCsv($items, $billNoStr);
+                                            $path     = $billingService->generateCsv($items, $billNoStr, $bDate);
                                             $filename = "bills/{$customer->_effective_cucode}/bill_{$safeBillNo}.csv";
                                             $mime     = 'text/csv';
                                             break;
