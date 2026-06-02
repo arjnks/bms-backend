@@ -31,12 +31,7 @@ class BillController extends Controller
         return is_string($url) && preg_match('/^https?:\/\//i', $url);
     }
 
-    private function numericBillNo(string $invoiceNo): int
-    {
-        preg_match('/(\d+)$/', $invoiceNo, $matches);
 
-        return (int) ($matches[1] ?? $invoiceNo);
-    }
 
     public function overview()
     {
@@ -119,12 +114,12 @@ class BillController extends Controller
         }
 
         if ($lineItems->isEmpty() && $bill->customer && $bill->customer->external_cucode) {
-            $numericBillNo = $this->numericBillNo((string) $bill->invoice_no);
+            $billNo = (string) $bill->invoice_no;
 
-            if ($numericBillNo > 0) {
+            if ($billNo !== '') {
                 try {
                     $billingService = app(ExternalBillingService::class);
-                    $items = $billingService->getBillDetails($numericBillNo);
+                    $items = $billingService->getBillDetails($billNo);
                     if (!empty($items)) {
                         foreach ($items as $item) {
                             try {

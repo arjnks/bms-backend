@@ -81,10 +81,8 @@ class BillController extends Controller
         try {
             if ($bill->lineItems()->count() === 0 && $bill->customer->external_cucode) {
                 // Fetch from ERP on the fly
-                preg_match('/(\d+)$/', $bill->invoice_no, $matches);
-                $numericId = (int) ($matches[1] ?? $bill->invoice_no);
                 $billingService = app(\App\Services\ExternalBillingService::class);
-                $items = $billingService->getBillDetails($numericId);
+                $items = $billingService->getBillDetails((string) $bill->invoice_no);
                 
                 if (!empty($items)) {
                     foreach ($items as $item) {
@@ -165,11 +163,7 @@ class BillController extends Controller
             ]);
         }
 
-        // Extract the raw numeric billno from a string like "LPH/2627/96609"
-        preg_match('/(\d+)$/', $bill->invoice_no, $matches);
-        $numericId = (int) ($matches[1] ?? $bill->invoice_no);
-
-        $items = $billingService->getBillDetails($numericId);
+        $items = $billingService->getBillDetails((string) $bill->invoice_no);
 
         if (empty($items)) {
             return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);

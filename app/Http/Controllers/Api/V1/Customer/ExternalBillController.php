@@ -68,10 +68,7 @@ class ExternalBillController extends Controller
     {
         $this->getCustomer($request); // validates customer is linked
 
-        preg_match('/(\d+)$/', $billno, $matches);
-        $numericId = (int) ($matches[1] ?? $billno);
-
-        $items = $this->billing->getBillDetails($numericId);
+        $items = $this->billing->getBillDetails($billno);
 
         if (empty($items)) {
             return response()->json(['status' => 'error', 'message' => 'Bill not found or no items.'], 404);
@@ -133,9 +130,6 @@ class ExternalBillController extends Controller
         $billno = $data['billno'];
         $format = $data['format'];
 
-        preg_match('/(\d+)$/', $billno, $matches);
-        $numericId = (int) ($matches[1] ?? $billno);
-
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
@@ -144,7 +138,7 @@ class ExternalBillController extends Controller
             return response()->json(['download_url' => $url]);
         }
 
-        $items  = $this->billing->getBillDetails($numericId);
+        $items  = $this->billing->getBillDetails($billno);
 
         if (empty($items)) {
             abort(404, 'Bill details not found in ERP.');
@@ -203,10 +197,7 @@ class ExternalBillController extends Controller
             return response()->json(['download_url' => $url]);
         }
 
-        preg_match('/(\d+)$/', $billno, $matches);
-        $numericId = (int) ($matches[1] ?? $billno);
-
-        $items = $this->billing->getBillDetails($numericId);
+        $items = $this->billing->getBillDetails($billno);
 
         if (empty($items)) {
             return response()->json(['message' => 'Bill not found.'], 404);

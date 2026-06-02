@@ -11,26 +11,39 @@ class ReportController extends Controller
 {
     public function aging(Request $request)
     {
-        $today = Carbon::today()->toDateString();
-        $todayStr = "'" . $today . "'";
+        $today = Carbon::today();
         
-        $stats = \Illuminate\Support\Facades\DB::table('bills')
-            ->selectRaw("
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) <= 30 THEN 1 ELSE 0 END) as count_0_30,
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) <= 30 THEN grand_total ELSE 0 END) as total_0_30,
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 30 AND DATEDIFF($todayStr, due_date) <= 60 THEN 1 ELSE 0 END) as count_31_60,
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 30 AND DATEDIFF($todayStr, due_date) <= 60 THEN grand_total ELSE 0 END) as total_31_60,
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 60 THEN 1 ELSE 0 END) as count_60_plus,
-                SUM(CASE WHEN DATEDIFF($todayStr, due_date) > 60 THEN grand_total ELSE 0 END) as total_60_plus
-            ")
+        $bills = \Illuminate\Support\Facades\DB::table('bills')
             ->whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->where('due_date', '<', $today)
-            ->first();
+            ->where('due_date', '<', $today->toDateString())
+            ->get(['due_date', 'grand_total']);
+
+        $stats = [
+            'count_0_30' => 0, 'total_0_30' => 0,
+            'count_31_60' => 0, 'total_31_60' => 0,
+            'count_60_plus' => 0, 'total_60_plus' => 0,
+        ];
+
+        foreach ($bills as $bill) {
+            $daysOverdue = Carbon::parse($bill->due_date)->diffInDays($today);
+            $amt = (float) $bill->grand_total;
+            
+            if ($daysOverdue <= 30) {
+                $stats['count_0_30']++;
+                $stats['total_0_30'] += $amt;
+            } elseif ($daysOverdue <= 60) {
+                $stats['count_31_60']++;
+                $stats['total_31_60'] += $amt;
+            } else {
+                $stats['count_60_plus']++;
+                $stats['total_60_plus'] += $amt;
+            }
+        }
 
         return response()->json([
-            '0_30_days' => ['count' => (int)($stats->count_0_30 ?? 0), 'total_amount' => (float)($stats->total_0_30 ?? 0)],
-            '31_60_days' => ['count' => (int)($stats->count_31_60 ?? 0), 'total_amount' => (float)($stats->total_31_60 ?? 0)],
-            '60_plus_days' => ['count' => (int)($stats->count_60_plus ?? 0), 'total_amount' => (float)($stats->total_60_plus ?? 0)],
+            '0_30_days' => ['count' => $stats['count_0_30'], 'total_amount' => $stats['total_0_30']],
+            '31_60_days' => ['count' => $stats['count_31_60'], 'total_amount' => $stats['total_31_60']],
+            '60_plus_days' => ['count' => $stats['count_60_plus'], 'total_amount' => $stats['total_60_plus']],
         ]);
     }
 

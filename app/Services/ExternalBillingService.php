@@ -50,60 +50,41 @@ class ExternalBillingService
     public function getBills(string $cucode, string $fromDate, string $toDate): array
     {
         try {
-            $response = Http::timeout(15)
-                ->withHeaders([
-                    
-                    'ngrok-skip-browser-warning' => 'true'
-                ])
+            $response = Http::timeout(60)
+                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_master.php", [
-                    ['name' => 'cucode',    'contents' => $cucode],
+                    ['name' => 'cucode', 'contents' => $cucode],
                     ['name' => 'from_date', 'contents' => $fromDate],
-                    ['name' => 'to_date',   'contents' => $toDate],
+                    ['name' => 'to_date', 'contents' => $toDate]
                 ]);
 
             if ($response->successful()) {
                 $data = $response->json();
-                if (($data['status'] ?? '') === 'success') {
-                    return $data['data'] ?? [];
-                }
+                return $data['data'] ?? $data ?? [];
             }
         } catch (\Exception $e) {
-            Log::error('ExternalBillingService::getBills failed', [
-                'cucode' => $cucode,
-                'error'  => $e->getMessage(),
-            ]);
+            Log::error("ExternalBillingService::getBills failed for $cucode", ['error' => $e->getMessage()]);
         }
         return [];
     }
 
-    /**
-     * Fetch line items for a specific bill (uses numeric BILLNO).
-     */
-    public function getBillDetails(int $billNo): array
+    public function getBillDetails(string $billNo): array
     {
         try {
-            $response = Http::timeout(45)
-                ->withHeaders([
-                    
-                    'ngrok-skip-browser-warning' => 'true'
-                ])
+            $response = Http::timeout(60)
+                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
-                    ['name' => 'billno', 'contents' => (string) $billNo],
+                    ['name' => 'billno', 'contents' => $billNo]
                 ]);
 
             if ($response->successful()) {
                 $data = $response->json();
-                if (($data['status'] ?? '') === 'success') {
-                    return $data['data'] ?? [];
-                }
+                return $data['data'] ?? $data ?? [];
             }
         } catch (\Exception $e) {
-            Log::error('ExternalBillingService::getBillDetails failed', [
-                'billno' => $billNo,
-                'error'  => $e->getMessage(),
-            ]);
+            Log::error("ExternalBillingService::getBillDetails failed for $billNo", ['error' => $e->getMessage()]);
         }
         return [];
     }
