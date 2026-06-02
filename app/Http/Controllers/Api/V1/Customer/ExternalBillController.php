@@ -194,23 +194,23 @@ class ExternalBillController extends Controller
     {
         $customer = $this->getCustomer($request);
         
+        $requestedFormat = $request->query('format');
+        $format = $requestedFormat ?? $customer->preferred_bill_format ?? 'excel';
+
         $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
                   ->where('customer_id', $customer->id)
                   ->first();
-                  
-        if ($bill && $bill->bill_file_url) {
+
+        if ($bill && $bill->bill_file_url && !$requestedFormat) {
             return $bill->bill_file_url;
         }
-        
-        $format   = $request->query('format') ?? $customer->preferred_bill_format ?? 'excel';
 
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
-        // TEMPORARILY DISABLE CACHE TO FORCE REGENERATION
-        // if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-        //     return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-        // }
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+        }
 
         $items = $this->billing->getBillDetails($billno);
 

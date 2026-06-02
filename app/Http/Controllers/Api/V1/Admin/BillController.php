@@ -176,11 +176,13 @@ class BillController extends Controller
         ]);
     }
 
-    public function download($id)
+    public function download(Request $request, $id)
     {
         $bill = Bill::findOrFail($id);
 
-        if ($this->isExternalUrl($bill->bill_file_url)) {
+        $requestedFormat = $request->query('format');
+
+        if ($this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
@@ -188,6 +190,7 @@ class BillController extends Controller
         \Illuminate\Support\Facades\Cache::put("bill_token_{$token}", [
             'id' => $bill->id,
             'customer_id' => null, // Admin doesn't need customer verification
+            'format' => $requestedFormat,
         ], now()->addMinutes(30));
 
         $url = "/api/v1/customer/bills/stream-token/{$token}";

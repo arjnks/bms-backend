@@ -289,8 +289,10 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Customer not linked to ERP billing system.'], 400);
         }
 
+        $format = $request->query('format') ?? $customer->preferred_bill_format ?? 'pdf';
+
         $safeBillno = str_replace(['/', '\\'], '_', $billno);
-        $r2Path = $billing->getCachedFilePath('pdf', $billno);
+        $r2Path = $billing->getCachedFilePath($format, $billno);
 
         if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
             $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
@@ -314,8 +316,17 @@ class CustomerController extends Controller
         $billDate = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
         $customerName = $customer->user->name ?? 'Customer';
 
-        // This now generates, uploads to R2, and returns the R2 path
-        $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+        switch ($format) {
+            case 'pdf':
+                $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                break;
+            case 'csv':
+                $path = $billing->generateCsv($items, $billNoStr, $billDate);
+                break;
+            default: // excel
+                $path = $billing->generateExcel($items, $billNoStr, $billDate);
+                break;
+        }
 
         $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
         return response()->json(['download_url' => $url]);

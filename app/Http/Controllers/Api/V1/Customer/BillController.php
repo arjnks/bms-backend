@@ -118,9 +118,11 @@ class BillController extends Controller
 
         $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
 
+        $requestedFormat = $request->query('format');
+
         // Cloud-hosted bills can be opened directly. Local uploads must go
         // through the signed stream route because Railway has no /storage link.
-        if ($this->isExternalUrl($bill->bill_file_url)) {
+        if ($this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
 
@@ -128,6 +130,7 @@ class BillController extends Controller
         \Illuminate\Support\Facades\Cache::put("bill_token_{$token}", [
             'id' => $bill->id,
             'customer_id' => $customerId,
+            'format' => $requestedFormat,
         ], now()->addMinutes(30));
 
         $url = "/api/v1/customer/bills/stream-token/{$token}";
@@ -141,26 +144,33 @@ class BillController extends Controller
             return response()->json(['message' => 'Invalid or expired token.'], 403);
         }
 
-        return $this->stream($request, $data['id'], $billingService);
+        return $this->stream($request, $data['id'], $billingService, $data['format'] ?? null);
     }
 
-    public function stream(Request $request, $id, ExternalBillingService $billingService)
+    public function stream(Request $request, $id, ExternalBillingService $billingService, $requestedFormat = null)
     {
         // No customerId check because it's a signed route, but we must ensure it exists.
         $bill = Bill::with('customer.user')->findOrFail($id);
 
-        if ($this->isExternalUrl($bill->bill_file_url)) {
+        if ($this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
             return redirect()->away($bill->bill_file_url);
         }
 
         $storedPath = $this->localBillPath($bill->bill_file_url);
-        if ($storedPath && Storage::disk('public')->exists($storedPath)) {
+        if ($storedPath && Storage::disk('public')->exists($storedPath) && !$requestedFormat) {
             $filename = basename($storedPath) ?: 'bill_' . $this->safeBillNo($bill->invoice_no);
             $mime = Storage::disk('public')->mimeType($storedPath) ?: 'application/octet-stream';
 
             return Storage::disk('public')->download($storedPath, $filename, [
                 'Content-Type' => $mime,
             ]);
+        }
+
+        $format = $requestedFormat ?? $bill->customer->preferred_bill_format ?? 'pdf';
+        $r2Path = $billingService->getCachedFilePath($format, $bill->invoice_no);
+        
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            return redirect()->away(\Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15)));
         }
 
         $items = $billingService->getBillDetails((string) $bill->invoice_no);
@@ -170,7 +180,6 @@ class BillController extends Controller
         }
 
         $customerName = $bill->customer->user->name ?? 'Customer';
-        $format = $request->query('format') ?? $bill->customer->preferred_bill_format ?? 'pdf';
         
         $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
         $billDate = $items[0]['BILLDATE'] ?? ($bill->bill_date ? $bill->bill_date->format('Y-m-d') : now()->format('Y-m-d'));
