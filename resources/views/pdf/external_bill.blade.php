@@ -22,6 +22,8 @@
       width: 100%;
       margin: 0 auto;
       background: #fff;
+      border: 4px double #2c3e50;
+      padding: 4px;
     }
 
     table {
@@ -111,17 +113,19 @@
     .items-table th {
       border: 1px solid #000;
       font-size: 6.5px;
-      background: #fff;
+      background: #eef2f5;
       font-weight: bold;
       text-align: center;
+      padding: 3px 1px;
     }
 
     .items-table td {
       border-left: 1px solid #000;
       border-right: 1px solid #000;
+      border-bottom: 1px dotted #aaa;
       text-align: center;
       font-size: 7px;
-      padding: 1px;
+      padding: 2px 1px;
     }
 
     .items-table td.left {
@@ -197,6 +201,7 @@
     .inner-gst-table th {
       text-align: center;
       font-weight: bold;
+      background: #eef2f5;
     }
 
     .prep-table td {
