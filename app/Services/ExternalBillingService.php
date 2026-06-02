@@ -87,6 +87,11 @@ class ExternalBillingService
             if ($response->successful()) {
                 $data = $response->json();
                 return $data['data'] ?? $data ?? [];
+            } else {
+                Log::error("ExternalBillingService::getBillDetails ERP returned non-success for $billNo", [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
             }
         } catch (\Exception $e) {
             Log::error("ExternalBillingService::getBillDetails failed for $billNo", ['error' => $e->getMessage()]);
