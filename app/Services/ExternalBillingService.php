@@ -216,7 +216,7 @@ class ExternalBillingService
             'BILL NO', 'BILL DATE', 'COMPANY', 'ITEM CODE', 'ITEM NAME', 'PACKING', 'BATCH NO', 'EXP DT',
             'QTY', 'FREE', 'PTR', 'MRP', 'AMOUNT', 'SCH.DIS%', 'DISCOUNT', 'DIS AMT', 'TAXABLE AMT',
             'GST %', 'GST AMT', 'VALUE', 'NET AMOUNT', 'HSNCODE'
-        ], "\t");
+        ]);
 
         $netAmount = $items[0]['NETAMOUNT'] ?? 0;
 
@@ -248,7 +248,7 @@ class ExternalBillingService
                 $item['TOTALAMOUNT'] ?? 0,
                 $netAmount,
                 $item['HSNCODE'] ?? '',
-            ], "\t");
+            ]);
         }
 
         fclose($fp);
