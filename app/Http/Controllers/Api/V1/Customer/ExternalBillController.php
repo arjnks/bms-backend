@@ -172,11 +172,25 @@ class ExternalBillController extends Controller
         return response()->json(['download_url' => $url]);
     }
 
-    /**
-     * Download bill in customer's preferred format.
-     * GET /customer/external-bills/{billno}/download
-     */
     public function download(Request $request, string $billno)
+    {
+        $url = $this->generateDownloadUrl($request, $billno);
+        if ($url instanceof \Illuminate\Http\JsonResponse) {
+            return $url; // Return the 404 message if not found
+        }
+        return redirect()->away($url);
+    }
+
+    public function downloadUrl(Request $request, string $billno)
+    {
+        $url = $this->generateDownloadUrl($request, $billno);
+        if ($url instanceof \Illuminate\Http\JsonResponse) {
+            return $url; // Return the 404 message if not found
+        }
+        return response()->json(['download_url' => $url]);
+    }
+
+    protected function generateDownloadUrl(Request $request, string $billno)
     {
         $customer = $this->getCustomer($request);
         
@@ -185,7 +199,7 @@ class ExternalBillController extends Controller
                   ->first();
                   
         if ($bill && $bill->bill_file_url) {
-            return redirect()->away($bill->bill_file_url);
+            return $bill->bill_file_url;
         }
         
         $format   = $customer->preferred_bill_format ?? 'excel';
@@ -195,8 +209,7 @@ class ExternalBillController extends Controller
         
         // TEMPORARILY DISABLE CACHE TO FORCE REGENERATION
         // if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-        //     $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-        //     return response()->json(['download_url' => $url]);
+        //     return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
         // }
 
         $items = $this->billing->getBillDetails($billno);
@@ -228,7 +241,6 @@ class ExternalBillController extends Controller
                 $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
 
-        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
-        return response()->json(['download_url' => $url]);
+        return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
     }
 }
