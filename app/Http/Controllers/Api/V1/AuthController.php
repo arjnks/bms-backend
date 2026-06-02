@@ -20,7 +20,6 @@ class AuthController extends Controller
             'phone' => 'required|string|max:20',
             'customer_code' => 'nullable|string|max:255',
             'password' => 'required|string|min:8',
-            'role' => 'in:admin,customer,marketing_company',
         ]);
 
         $user = User::create([
@@ -30,7 +29,7 @@ class AuthController extends Controller
             'phone' => $validated['phone'],
             'customer_code' => $validated['customer_code'] ?? null,
             'password' => Hash::make($validated['password']),
-            'role' => $validated['role'] ?? 'customer',
+            'role' => 'customer',
             'status' => 'pending', // Requires admin approval based on schema rules
         ]);
 

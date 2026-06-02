@@ -115,17 +115,24 @@ class SyncBillsController extends Controller
                             
                             if (!empty($items)) {
                                 if ($needsItems) {
+                                    $itemData = [];
                                     foreach ($items as $item) {
+                                        $itemData[] = [
+                                            'bill_id'      => $bill->id,
+                                            'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                                            'hsn_code'     => $item['HSNCODE'] ?? null,
+                                            'qty'          => $item['QUANTITY'] ?? 1,
+                                            'unit'         => $item['UNIT'] ?? 'NOS',
+                                            'rate'         => $item['SRATE'] ?? 0,
+                                            'gst_pct'      => $item['GSTRATE'] ?? 0,
+                                            'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                                            'created_at'   => now(),
+                                            'updated_at'   => now(),
+                                        ];
+                                    }
+                                    if (!empty($itemData)) {
                                         try {
-                                            $bill->lineItems()->create([
-                                                'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
-                                                'hsn_code'     => $item['HSNCODE'] ?? null,
-                                                'qty'          => $item['QUANTITY'] ?? 1,
-                                                'unit'         => $item['UNIT'] ?? 'NOS',
-                                                'rate'         => $item['SRATE'] ?? 0,
-                                                'gst_pct'      => $item['GSTRATE'] ?? 0,
-                                                'line_total'   => $item['TOTALAMOUNT'] ?? 0,
-                                            ]);
+                                            \Illuminate\Support\Facades\DB::table('bill_line_items')->insert($itemData);
                                         } catch (\Exception $e) {} // Ignore if table missing
                                     }
                                 }

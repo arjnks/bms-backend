@@ -92,6 +92,34 @@ Route::prefix('v1')->group(function () {
             // Sync Bills from ERP
             Route::post('/sync/bills', [SyncBillsController::class, 'syncBills']);
             Route::get('/sync/bills/status', [SyncBillsController::class, 'billSyncStatus']);
+
+            // Debug and Utility Routes
+            Route::get('/setup-seed', function () {
+                try {
+                    \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
+                    return response()->json(['message' => 'Database seeded successfully. You can now login.']);
+                } catch (\Exception $e) {
+                    return response()->json(['error' => $e->getMessage()]);
+                }
+            });
+            Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
+            Route::get('/dump-bill/{id}', function($id) { $b = \App\Models\Bill::find($id); return $b ? $b : ['error' => 'not found']; });
+            Route::get('/cleanup-dummies', function() {
+                $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
+                \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
+                \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
+                $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
+                return ['deleted' => $count];
+            });
+            Route::get("/test-r2-env", function() {
+                return [
+                    "bucket" => config("filesystems.disks.r2.bucket"),
+                    "has_key" => !empty(config("filesystems.disks.r2.key")),
+                    "has_secret" => !empty(config("filesystems.disks.r2.secret")),
+                    "has_endpoint" => !empty(config("filesystems.disks.r2.endpoint")),
+                    "env_key" => !empty(env("CLOUDFLARE_R2_ACCESS_KEY_ID"))
+                ];
+            });
         });
 
         // Customer Routes
@@ -118,32 +146,3 @@ Route::prefix('v1')->group(function () {
     });
 });
 
-Route::get('/setup-seed', function () {
-    try {
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
-        return response()->json(['message' => 'Database seeded successfully. You can now login.']);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()]);
-    }
-});
-
-Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
-
-Route::get('/dump-bill/{id}', function($id) { $b = \App\Models\Bill::find($id); return $b ? $b : ['error' => 'not found']; });
-Route::get('/cleanup-dummies', function() {
-    $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
-    \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
-    \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
-    $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
-    return ['deleted' => $count];
-});
-
-Route::get("/test-r2-env", function() {
-    return [
-        "bucket" => config("filesystems.disks.r2.bucket"),
-        "has_key" => !empty(config("filesystems.disks.r2.key")),
-        "has_secret" => !empty(config("filesystems.disks.r2.secret")),
-        "has_endpoint" => !empty(config("filesystems.disks.r2.endpoint")),
-        "env_key" => !empty(env("CLOUDFLARE_R2_ACCESS_KEY_ID"))
-    ];
-});
