@@ -125,7 +125,7 @@
       border-bottom: 1px dotted #aaa;
       text-align: center;
       font-size: 7px;
-      padding: 2px 1px;
+      padding: 1px;
     }
 
     .items-table td.left {
@@ -145,13 +145,13 @@
     }
 
     .footer-left {
-      width: 75%;
+      width: 70%;
       border-right: 1px solid #000;
       padding: 0;
     }
 
     .footer-right {
-      width: 25%;
+      width: 30%;
       padding: 2px;
     }
 
