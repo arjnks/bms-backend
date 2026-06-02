@@ -41,7 +41,10 @@ class ExternalBillingService
 
             if ($response->successful()) {
                 $data = $response->json();
-                return $data['data'] ?? $data ?? [];
+                if (isset($data['status']) && $data['status'] === 'empty') {
+                    return [];
+                }
+                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
             }
         } catch (\Exception $e) {
             Log::error('ExternalBillingService::getCustomers failed', ['error' => $e->getMessage()]);
@@ -71,7 +74,10 @@ class ExternalBillingService
 
             if ($response->successful()) {
                 $data = $response->json();
-                return $data['data'] ?? $data ?? [];
+                if (isset($data['status']) && $data['status'] === 'empty') {
+                    return [];
+                }
+                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
             }
         } catch (\Exception $e) {
             Log::error("ExternalBillingService::getBills failed for $cucode", ['error' => $e->getMessage()]);
@@ -101,7 +107,10 @@ class ExternalBillingService
 
             if ($response->successful()) {
                 $data = $response->json();
-                return $data['data'] ?? $data ?? [];
+                if (isset($data['status']) && $data['status'] === 'empty') {
+                    return [];
+                }
+                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
             } else {
                 Log::error("ExternalBillingService::getBillDetails ERP returned non-success for $billNo", [
                     'status' => $response->status(),
