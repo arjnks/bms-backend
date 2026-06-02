@@ -133,10 +133,11 @@ class ExternalBillController extends Controller
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
-        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-            return response()->json(['download_url' => $url]);
-        }
+        // TEMPORARILY DISABLE CACHE TO FORCE REGENERATION
+        // if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+        //     $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+        //     return response()->json(['download_url' => $url]);
+        // }
 
         $items  = $this->billing->getBillDetails($billno);
 
@@ -192,10 +193,11 @@ class ExternalBillController extends Controller
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
-        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-            return response()->json(['download_url' => $url]);
-        }
+        // TEMPORARILY DISABLE CACHE TO FORCE REGENERATION
+        // if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+        //     $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+        //     return response()->json(['download_url' => $url]);
+        // }
 
         $items = $this->billing->getBillDetails($billno);
 
