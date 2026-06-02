@@ -29,6 +29,11 @@ class ExternalBillingService
     {
         try {
             $response = Http::timeout(60)
+                ->withOptions([
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
                 ->withHeaders([
                     'ngrok-skip-browser-warning' => 'true'
                 ])
@@ -51,6 +56,11 @@ class ExternalBillingService
     {
         try {
             $response = Http::timeout(60)
+                ->withOptions([
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
                 ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_master.php", [
@@ -78,6 +88,11 @@ class ExternalBillingService
 
         try {
             $response = Http::timeout(60)
+                ->withOptions([
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
                 ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
                 ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
