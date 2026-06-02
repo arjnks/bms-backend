@@ -186,8 +186,17 @@ $custGst = $custModel ? $custModel->gstin : "";
         <table class="bank-gst-table">
           <tr>
             <td class="bank-cell">
-              <strong><u>Bank Details</u></strong><br>
-              Bank : <br>Br : <br>A/c No : <br>IFSC :
+              <table style="width:100%; border:none; padding:0; margin:0;">
+                <tr>
+                  <td style="border:none; padding:0; width:60%;">
+                    <strong><u>Bank Details</u></strong><br>
+                    Bank : HDFC Bank<br>Br : Palace Road, Tcr<br>A.c No : 50200043969997<br>IFSC : HDFC0000057
+                  </td>
+                  <td style="border:none; padding:0; width:40%; text-align:right;">
+                    <img src="https://chart.googleapis.com/chart?chs=60x60&cht=qr&chl=upi://pay?pa=leo@hdfcbank" style="width:40px; height:40px;" alt="QR">
+                  </td>
+                </tr>
+              </table>
             </td>
             <td class="gst-cell">
               <table class="inner-gst-table">
