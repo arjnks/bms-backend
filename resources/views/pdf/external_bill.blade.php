@@ -137,7 +137,7 @@ $custGst = $custModel ? $custModel->gstin : "";
   <table class="header-table">
     <tr>
       <td class="logo-cell">
-        <div class="logo-circle">LEO</div>
+        <img src="{{ public_path('leo_logo.jpg') }}" style="width: 60px; height: auto; margin: 0 auto; display: block;" alt="LEO">
         <div>GROUP</div>
         <div>Since 1974</div>
       </td>
