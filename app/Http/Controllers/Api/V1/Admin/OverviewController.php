@@ -19,9 +19,8 @@ class OverviewController extends Controller
         $totalOutstanding = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
             ->sum('grand_total');
 
-        // Bills sent today: count directly from the ERP statuses table
-        // (This contains all 1000-2000 bills generated per day)
-        $billsToday = \App\Models\ErpBillStatus::whereDate('date', $today)->count();
+        // Bills sent today: count from local synced bills
+        $billsToday = \App\Models\Bill::whereDate('bill_date', $today)->count();
 
         // Total customers
         $totalCustomers = \App\Models\User::where('role', 'customer')->count();

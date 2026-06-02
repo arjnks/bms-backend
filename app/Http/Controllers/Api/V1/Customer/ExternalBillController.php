@@ -97,15 +97,17 @@ class ExternalBillController extends Controller
             return response()->json(['message' => 'Not a customer profile'], 403);
         }
 
+        $requestedFormat = $request->query('format');
+
         $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
                   ->where('customer_id', $customer->id)
                   ->first();
                   
-        if ($bill && $bill->bill_file_url) {
+        if ($bill && $bill->bill_file_url && !$requestedFormat) {
             return response()->json(['download_url' => $bill->bill_file_url]);
         }
         
-        $format   = $customer->preferred_bill_format ?? 'excel';
+        $format = $requestedFormat ?? $customer->preferred_bill_format ?? 'excel';
 
         // Generate a secure one-time token and store it in cache for 15 minutes
         $token = \Illuminate\Support\Str::random(40);
@@ -133,11 +135,10 @@ class ExternalBillController extends Controller
         $r2Path = $this->billing->getCachedFilePath($format, $billno);
         $safeBillNo = str_replace(['/', '\\'], '_', $billno);
         
-        // TEMPORARILY DISABLE CACHE TO FORCE REGENERATION
-        // if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-        //     $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-        //     return response()->json(['download_url' => $url]);
-        // }
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return redirect()->away($url);
+        }
 
         $items  = $this->billing->getBillDetails($billno);
 
@@ -149,98 +150,19 @@ class ExternalBillController extends Controller
         $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
         $customerName = '';
 
-        $safeBillNo = str_replace(['/', '\\'], '_', $billNoStr);
-
         switch ($format) {
             case 'pdf':
                 $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $filename = "bill_{$safeBillNo}.pdf";
-                $mime     = 'application/pdf';
                 break;
             case 'csv':
                 $path     = $this->billing->generateCsv($items, $billNoStr, $billDate);
-                $filename = "bill_{$safeBillNo}.csv";
-                $mime     = 'text/csv';
                 break;
             default:
                 $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
-                $filename = "bill_{$safeBillNo}.xlsx";
-                $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                break;
         }
 
         $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
-        return response()->json(['download_url' => $url]);
-    }
-
-    public function download(Request $request, string $billno)
-    {
-        $url = $this->generateDownloadUrl($request, $billno);
-        if ($url instanceof \Illuminate\Http\JsonResponse) {
-            return $url; // Return the 404 message if not found
-        }
         return redirect()->away($url);
-    }
-
-    public function downloadUrl(Request $request, string $billno)
-    {
-        $url = $this->generateDownloadUrl($request, $billno);
-        if ($url instanceof \Illuminate\Http\JsonResponse) {
-            return $url; // Return the 404 message if not found
-        }
-        return response()->json(['download_url' => $url]);
-    }
-
-    protected function generateDownloadUrl(Request $request, string $billno)
-    {
-        $customer = $this->getCustomer($request);
-        
-        $requestedFormat = $request->query('format');
-        $format = $requestedFormat ?? $customer->preferred_bill_format ?? 'excel';
-
-        $bill = \App\Models\Bill::where('invoice_no', (string)$billno)
-                  ->where('customer_id', $customer->id)
-                  ->first();
-
-        if ($bill && $bill->bill_file_url && !$requestedFormat) {
-            return $bill->bill_file_url;
-        }
-
-        $r2Path = $this->billing->getCachedFilePath($format, $billno);
-        $safeBillNo = str_replace(['/', '\\'], '_', $billno);
-        
-        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
-            return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
-        }
-
-        $items = $this->billing->getBillDetails($billno);
-
-        if (empty($items)) {
-            return response()->json(['message' => 'Bill not found.'], 404);
-        }
-
-        $billNoStr    = $items[0]['BILLNO'] ?? (string) $billno;
-        $billDate     = $items[0]['BILLDATE'] ?? now()->format('Y-m-d');
-        $customerName = $customer->user->name ?? 'Customer';
-
-        switch ($format) {
-            case 'pdf':
-                $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $filename = "bill_{$safeBillNo}.pdf";
-                $mime     = 'application/pdf';
-                break;
-
-            case 'csv':
-                $path     = $this->billing->generateCsv($items, $billNoStr, $billDate);
-                $filename = "bill_{$safeBillNo}.csv";
-                $mime     = 'text/csv';
-                break;
-
-            default: // excel
-                $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
-                $filename = "bill_{$safeBillNo}.xlsx";
-                $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        }
-
-        return \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
     }
 }

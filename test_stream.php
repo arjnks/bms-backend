@@ -1,10 +1,11 @@
 <?php
-require 'vendor/autoload.php';
-$app = require_once __DIR__.'/bootstrap/app.php';
-$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
-$response = $kernel->handle(
-    $request = Illuminate\Http\Request::capture()
-);
-$bill = \App\Models\Bill::orderBy('id', 'desc')->first();
-$url = \Illuminate\Support\Facades\URL::temporarySignedRoute('bills.download.stream', now()->addMinutes(30), ['id' => $bill->id]);
-echo "URL:\n$url\n";
+$customer = \App\Models\User::where("role", "customer")->first();
+$token = $customer->createToken("test")->plainTextToken;
+
+$res1 = \Illuminate\Support\Facades\Http::withToken($token)->get("http://127.0.0.1:8003/api/v1/customer/external-bills/LPH_2627_109319/download-url?format=excel");
+$url = json_decode($res1->body(), true)["download_url"];
+
+$res2 = \Illuminate\Support\Facades\Http::withToken($token)->get("http://127.0.0.1:8003" . $url);
+echo "Status: " . $res2->status() . "\n";
+echo "Response: " . substr($res2->body(), 0, 500) . "\n";
+
