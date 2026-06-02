@@ -19,7 +19,6 @@
     }
 
     .page {
-      width: 100%;
       margin: 0 auto;
       background: #fff;
       border: 4px double #2c3e50;
