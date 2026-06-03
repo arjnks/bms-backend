@@ -28,12 +28,12 @@ class CustomerController extends Controller
         $customers = Customer::with('user:id,name,email,phone')
             ->withSum([
                 'bills as outstanding_amount' => function ($q) {
-                    $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
+                    $q->where('is_settled', false);
                 }
-            ], 'grand_total')
+            ], \Illuminate\Support\Facades\DB::raw('grand_total - amount_received'))
             ->withMin([
                 'bills as nearest_due_date' => function ($q) {
-                    $q->whereIn('payment_status', ['unpaid', 'proof_rejected']);
+                    $q->where('is_settled', false);
                 }
             ], 'due_date')
             ->withMax('reminderLogs as last_reminder_sent', 'sent_at')
@@ -99,7 +99,27 @@ class CustomerController extends Controller
     public function show($id)
     {
         $customer = Customer::with(['user', 'bills', 'reminderLogs'])->findOrFail($id);
-        return response()->json($customer);
+
+        $bills = $customer->bills;
+
+        $outstandingAmount = $bills
+            ->where('is_settled', false)
+            ->sum(function ($b) {
+                return max(0, $b->grand_total - $b->amount_received);
+            });
+
+        return response()->json([
+            'id'                    => $customer->id,
+            'customer_code'         => $customer->customer_code,
+            'external_cucode'       => $customer->external_cucode,
+            'gstin'                 => $customer->gstin,
+            'credit_limit'          => $customer->credit_limit,
+            'preferred_bill_format' => $customer->preferred_bill_format,
+            'user'                  => $customer->user,
+            'bills'                 => $bills->values(),
+            'outstanding_amount'    => $outstandingAmount,
+            'reminder_logs'         => $customer->reminderLogs,
+        ]);
     }
 
     public function update(Request $request, $id)
