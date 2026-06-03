@@ -28,8 +28,8 @@ class SyncUnpaidBills extends Command
         $this->info("Found " . count($unpaidBills) . " unpaid bills. Processing...");
 
         // Get all customer codes
-        $cucodes = collect($unpaidBills)->pluck('cucode')->unique()->toArray();
-        $customers = Customer::whereIn('customer_code', $cucodes)->get()->keyBy('customer_code');
+        $cucodes = collect($unpaidBills)->pluck('cucode')->filter()->unique()->toArray();
+        $customers = Customer::whereIn('external_cucode', $cucodes)->get()->keyBy('external_cucode');
 
         $upsertData = [];
         $skipped = 0;
