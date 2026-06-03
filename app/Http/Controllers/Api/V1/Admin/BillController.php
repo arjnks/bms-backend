@@ -74,7 +74,37 @@ class BillController extends Controller
             $query->where('due_date', '<', Carbon::today())->whereIn('payment_status', ['unpaid', 'proof_rejected']);
         }
 
-        $bills = $query->orderBy('created_at', 'desc')->paginate(15);
+        if ($request->filled('from_date')) {
+            $query->whereDate('bill_date', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('bill_date', '<=', $request->to_date);
+        }
+
+        if ($request->filled('sort_by')) {
+            switch ($request->sort_by) {
+                case 'highest_overdue':
+                    $query->orderByRaw('(grand_total - amount_received) DESC');
+                    break;
+                case 'lowest_overdue':
+                    $query->orderByRaw('(grand_total - amount_received) ASC');
+                    break;
+                case 'oldest':
+                    $query->orderBy('bill_date', 'asc');
+                    break;
+                case 'newest':
+                    $query->orderBy('bill_date', 'desc');
+                    break;
+                default:
+                    $query->orderBy('created_at', 'desc');
+                    break;
+            }
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
+
+        $bills = $query->paginate(15);
 
         $bills->getCollection()->transform(function ($bill) {
             return [
@@ -240,7 +270,7 @@ class BillController extends Controller
             if ($request->hasFile('bill_file')) {
                 $path = $request->file('bill_file')->store('bills', 'public');
             } elseif ($validated['bill_file_type'] === 'pdf') {
-                $pdf = Pdf::loadView('pdf.bill', ['bill' => $bill]);
+                $pdf = Pdf::loadView('pdf.bill', ['bill' => $bill])->setPaper('a4', 'landscape');
                 $path = 'bills/' . $bill->invoice_no . '.pdf';
                 Storage::disk('public')->put($path, $pdf->output());
             }
