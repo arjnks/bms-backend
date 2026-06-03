@@ -148,21 +148,26 @@ class SyncBills extends Command
                 continue;
             }
 
-            $billDate = isset($b['date']) ? Carbon::parse($b['date'])->format('Y-m-d') : null;
+            $billDateObj = isset($b['date']) ? Carbon::parse($b['date']) : now();
+            $billDate = $billDateObj->format('Y-m-d');
+            $lockDays = (int) ($b['lockdays'] ?? 0);
+            $dueDate = (clone $billDateObj)->addDays($lockDays)->format('Y-m-d');
+            
             $netamount = (float) ($b['netamount'] ?? 0);
-            $amtreceived = (float) ($b['amtreceived'] ?? 0);
+            $amtreceived = (float) ($b['amountrecieved'] ?? $b['amtreceived'] ?? $b['amount_received'] ?? 0);
             $isSettled = (($b['settled'] ?? 'N') === 'Y');
 
             $upsertData[] = [
                 "customer_id" => $customer->id,
                 "invoice_no" => $invoiceNo,
                 "bill_date" => $billDate,
+                "due_date" => $dueDate,
                 "subtotal" => $netamount,
                 "grand_total" => $netamount,
                 "amount_received" => $amtreceived,
                 "is_settled" => $isSettled,
                 "aging_days" => (int) ($b['ddays'] ?? 0),
-                "lock_days" => (int) ($b['lockdays'] ?? 0),
+                "lock_days" => $lockDays,
                 "payment_status" => $isSettled ? 'paid' : 'unpaid',
                 "status" => $isSettled ? 'paid' : 'unpaid',
                 "created_at" => $now,
@@ -173,14 +178,36 @@ class SyncBills extends Command
             $histBar->advance();
 
             if (count($upsertData) >= 1000) {
-                Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
+                Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'due_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
                 $upsertData = [];
             }
         }
         
         if (!empty($upsertData)) {
-            Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
+            Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'due_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
         }
+
+        // Fix the 'ghost bills' issue (approx 2cr extra bug)
+        // If an unsettled bill is NO LONGER returned by the API, it means it has been fully paid and dropped from the unpaid ledger.
+        if (!empty($unpaidBills)) {
+            $erpInvoiceNos = collect($unpaidBills)->pluck('billno')->filter()->values()->toArray();
+            if (!empty($erpInvoiceNos)) {
+                $missingBillsCount = Bill::where('is_settled', false)
+                    ->whereNotIn('invoice_no', $erpInvoiceNos)
+                    ->update([
+                        'is_settled' => true,
+                        'amount_received' => DB::raw('grand_total'),
+                        'payment_status' => 'paid',
+                        'status' => 'paid',
+                        'updated_at' => now()
+                    ]);
+                
+                if ($missingBillsCount > 0) {
+                    $this->info("Marked {$missingBillsCount} missing/ghost bills as fully settled (dropped from ERP unpaid ledger).");
+                }
+            }
+        }
+
         $histBar->finish();
         $this->newLine();
         $this->info("Historical sync complete! Upserted {$histUpserted} unpaid bills.");

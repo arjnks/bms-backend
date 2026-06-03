@@ -150,15 +150,33 @@ class ExternalBillingService
 
     /**
      * Fetch unpaid historical dues across all pages.
+     * @deprecated Use streamUnpaidBills() for memory-efficient processing.
      */
     public function getUnpaidBills(): array
     {
         $allBills = [];
+        foreach ($this->streamUnpaidBills() as $batch) {
+            foreach ($batch as $bill) {
+                $allBills[] = $bill;
+            }
+        }
+        return $allBills;
+    }
+
+    /**
+     * Stream unpaid historical dues page-by-page as a generator.
+     * Yields one page's worth of records at a time to avoid memory exhaustion.
+     * Use this for large datasets (100k+ records).
+     *
+     * @return \Generator yields array[] — one page of bill records per iteration
+     */
+    public function streamUnpaidBills(): \Generator
+    {
         $page = 1;
 
         try {
             while (true) {
-                $response = Http::timeout(60)
+                $response = Http::timeout(90)
                     ->withOptions([
                         CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
                         CURLOPT_SSL_VERIFYHOST => 0,
@@ -176,7 +194,7 @@ class ExternalBillingService
 
                 if ($response->successful()) {
                     $data = $response->json();
-                    
+
                     if (isset($data['status']) && $data['status'] === 'empty') {
                         break;
                     }
@@ -186,28 +204,25 @@ class ExternalBillingService
                         break;
                     }
 
-                    $allBills = array_merge($allBills, $batch);
+                    // Yield one page at a time — caller processes it, then GC can free it
+                    yield $batch;
 
-                    // Check if we reached the last page
-                    // The API returns count=50000 and per_page=50000. If count < per_page, or if empty array returned next time, it will stop.
                     if (count($batch) < ($data['per_page'] ?? 50000)) {
-                        break; 
+                        break;
                     }
 
                     $page++;
                 } else {
-                    Log::error("ExternalBillingService::getUnpaidBills ERP returned non-success on page $page", [
+                    Log::error("ExternalBillingService::streamUnpaidBills ERP returned non-success on page $page", [
                         'status' => $response->status(),
-                        'body' => $response->body()
+                        'body'   => $response->body()
                     ]);
                     break;
                 }
             }
         } catch (\Exception $e) {
-            Log::error("ExternalBillingService::getUnpaidBills failed", ['error' => $e->getMessage()]);
+            Log::error("ExternalBillingService::streamUnpaidBills failed", ['error' => $e->getMessage()]);
         }
-        
-        return $allBills;
     }
 
     public function getCachedFilePath(string $format, string $billNo): string

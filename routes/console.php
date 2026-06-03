@@ -18,3 +18,7 @@ Schedule::command('bms:sync-bills --days=2')->hourly()->withoutOverlapping()->ru
 
 // Sync the 50,000+ record ERP payment statuses API every hour
 Schedule::command('erp:sync-statuses')->hourly()->withoutOverlapping()->runInBackground();
+
+// Daily status updates for due_soon and overdue
+Schedule::command('bms:update-bill-statuses')->dailyAt('00:05')->withoutOverlapping()->runInBackground();
+

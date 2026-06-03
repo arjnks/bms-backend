@@ -7,13 +7,19 @@
   <style>
     @page {
       size: A4 landscape;
-      margin: 10mm;
+      margin: 6mm;
     }
 
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
     }
 
     body {
@@ -24,10 +30,14 @@
     }
 
     .page {
-      margin: 0 auto;
+      width: 100%;
+      height: calc(210mm - 12mm);
+      /* A4 landscape height minus margins */
       background: #fff;
       border: 4px double #2c3e50;
-      padding: 4px;
+      padding: 3px;
+      display: flex;
+      flex-direction: column;
     }
 
     table {
@@ -45,31 +55,20 @@
     .header-table {
       border: 1px solid #000;
       border-bottom: none;
+      flex-shrink: 0;
     }
 
     .logo-cell {
       text-align: center;
-      width: 15%;
+      width: 13%;
       border-right: 1px solid #000;
-    }
-
-    .logo-circle {
-      width: 50px;
-      height: 50px;
-      border: 2px solid #2e7d32;
-      border-radius: 50%;
-      margin: 0 auto;
-      font-size: 10px;
-      font-weight: bold;
-      color: #2e7d32;
-      line-height: 50px;
     }
 
     .company-cell {
-      width: 40%;
+      width: 38%;
       border-right: 1px solid #000;
       font-size: 7.5px;
-      line-height: 1.2;
+      line-height: 1.3;
     }
 
     .company-name {
@@ -86,36 +85,49 @@
     }
 
     .cust-cell {
-      width: 23%;
+      width: 27%;
       font-size: 7.5px;
-      position: relative;
     }
 
     /* E-Way Row */
     .eway-table {
       border: 1px solid #000;
       border-bottom: none;
+      border-top: none;
       font-size: 7.5px;
+      flex-shrink: 0;
     }
 
     .eway-table td {
       width: 33.3%;
       border-right: 1px solid #000;
       font-weight: bold;
+      padding: 2px;
     }
 
     .eway-table td:last-child {
       border-right: none;
     }
 
+    /* Items Table Wrapper — this grows to fill available space */
+    .items-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #000;
+    }
+
     /* Items Table */
     .items-table {
-      border: 1px solid #000;
-      border-top: none;
+      width: 100%;
+      border-collapse: collapse;
+      flex-shrink: 0;
     }
 
     .items-table th {
       border: 1px solid #000;
+      border-top: none;
       font-size: 6.5px;
       background: #eef2f5;
       font-weight: bold;
@@ -129,40 +141,45 @@
       border-bottom: 1px dotted #aaa;
       text-align: center;
       font-size: 7px;
-      padding: 1px;
+      padding: 2px 1px;
     }
 
     .items-table td.left {
       text-align: left;
     }
 
-    .items-table tr.empty-row td {
-      height: 10px;
+    /* Spacer row that fills remaining vertical space */
+    .spacer-row {
+      flex: 1;
+      border-left: 1px solid #000;
+      border-right: 1px solid #000;
+      border-bottom: 1px solid #000;
     }
-
-    /* Smaller filler height */
 
     /* Footer Section */
     .footer-table {
       border: 1px solid #000;
-      border-top: 1px solid #000;
+      border-top: none;
+      flex-shrink: 0;
     }
 
     .footer-left {
       width: 70%;
       border-right: 1px solid #000;
       padding: 0;
+      vertical-align: top;
     }
 
     .footer-right {
       width: 30%;
       padding: 2px;
+      vertical-align: top;
     }
 
     .summary-table td {
       border: none;
       font-size: 7.5px;
-      padding: 1px;
+      padding: 1px 2px;
     }
 
     .summary-table td:last-child {
@@ -170,10 +187,16 @@
       font-weight: bold;
     }
 
-    .bill-amt-row {
+    .bill-amt-row td {
       border-top: 1px solid #000;
       font-size: 10px !important;
       font-weight: bold;
+      padding-top: 2px;
+    }
+
+    .bank-gst-table {
+      width: 100%;
+      border-collapse: collapse;
     }
 
     .bank-gst-table td {
@@ -194,12 +217,17 @@
       padding: 0 !important;
     }
 
+    .inner-gst-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
     .inner-gst-table th,
     .inner-gst-table td {
       border: 1px solid #000;
       font-size: 6.5px;
       text-align: right;
-      padding: 1px;
+      padding: 1px 2px;
     }
 
     .inner-gst-table th {
@@ -208,9 +236,15 @@
       background: #eef2f5;
     }
 
+    .prep-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
     .prep-table td {
       border-bottom: 1px solid #000;
       font-size: 7px;
+      padding: 2px;
     }
   </style>
 </head>
@@ -293,7 +327,6 @@
         $num = number_format($num, 2, '.', '');
         $num_arr = explode('.', $num);
         $whole = $num_arr[0];
-        $dec = $num_arr[1];
         $whole_arr = array_reverse(explode(',', number_format($whole)));
         $k = 0;
         $words = '';
@@ -327,6 +360,8 @@
   @endphp
 
   <div class="page">
+
+    {{-- HEADER --}}
     <table class="header-table">
       <tr>
         <td class="logo-cell">
@@ -337,7 +372,9 @@
         </td>
         <td class="company-cell">
           <div class="company-name">LEO PHARMA DISTRIBUTORS P.LTD</div>
-          DOOR NO.17/18/C, LEO LOGISTICS HUB<br>ELAMTHURUTHY, KALADY, KUTTANELLUR P.O<br>THRISSUR - 680 014<br>
+          DOOR NO.17/18/C, LEO LOGISTICS HUB<br>
+          ELAMTHURUTHY, KALADY, KUTTANELLUR P.O<br>
+          THRISSUR - 680 014<br>
           PHONE : 0487 2224080, 3506700 | e-mail : order.leogroup@gmail.com<br>
           <strong>GST IN : 32AALCA0738P1ZG</strong> - Kerala(32)
         </td>
@@ -370,6 +407,7 @@
       </tr>
     </table>
 
+    {{-- E-WAY --}}
     <table class="eway-table">
       <tr>
         <td>E-way No : NA</td>
@@ -378,75 +416,78 @@
       </tr>
     </table>
 
-    <table class="items-table">
-      <thead>
-        <tr>
-          <th>M.R.P</th>
-          <th>BATCH NO</th>
-          <th>EXP<br>DATE</th>
-          <th>MFR/<br>MKT</th>
-          <th style="text-align:left;">ITEM NAME &amp; PACKING</th>
-          <th>HSN<br>CODE</th>
-          <th>QTY</th>
-          <th>FREE</th>
-          <th>RATE</th>
-          <th>AMOUNT</th>
-          <th>SCH<br>DIS%</th>
-          <th>CASH<br>DIS%</th>
-          <th>DISC<br>AMOUNT</th>
-          <th>TAXABLE<br>AMOUNT</th>
-          <th>GST<br>%</th>
-          <th>GST<br>VALUE</th>
-          <th>NET<br>AMOUNT</th>
-        </tr>
-      </thead>
-      <tbody>
-        @foreach($items as $item)
+    {{-- ITEMS WRAPPER: grows to fill all remaining space --}}
+    <div class="items-wrapper">
+      <table class="items-table">
+        <thead>
           <tr>
-            <td>{{ number_format((float) ($item['PMRP'] ?? 0), 2) }}</td>
-            <td>{{ $item['BATCHNO'] ?? '' }}</td>
-            <td>{{ $item['EXPIRYDATE'] ?? '' }}</td>
-            <td>{{ substr($item['COMPNAME'] ?? '', 0, 8) }}</td>
-            <td class="left">{{ $item['ITEMNAME'] ?? '' }}</td>
-            <td>{{ $item['HSNCODE'] ?? '' }}</td>
-            <td>{{ $item['QUANTITY'] ?? 0 }}</td>
-            <td>{{ $item['FREE'] ?? 0 }}</td>
-            <td>{{ number_format((float) ($item['SRATE'] ?? 0), 2) }}</td>
-            <td>{{ number_format(((float) ($item['SRATE'] ?? 0)) * ((int) ($item['QUANTITY'] ?? 0)), 2) }}</td>
-            <td>{{ $item['DISCOUNT'] ?? 0 }}</td>
-            <td>{{ $item['CASHDISPER'] ?? 0 }}</td>
-            <td>{{ number_format((float) ($item['DISVALUE'] ?? 0), 2) }}</td>
-            <td>{{ number_format((float) ($item['TAXABLE'] ?? 0), 2) }}</td>
-            <td>{{ $item['GSTRATE'] ?? 0 }}</td>
-            <td>{{ number_format((float) ($item['GSTVALUE'] ?? 0), 2) }}</td>
-            <td>{{ number_format((float) ($item['TOTALAMOUNT'] ?? 0), 2) }}</td>
+            <th>M.R.P</th>
+            <th>BATCH NO</th>
+            <th>EXP<br>DATE</th>
+            <th>MFR/<br>MKT</th>
+            <th style="text-align:left;">ITEM NAME &amp; PACKING</th>
+            <th>HSN<br>CODE</th>
+            <th>QTY</th>
+            <th>FREE</th>
+            <th>RATE</th>
+            <th>AMOUNT</th>
+            <th>SCH<br>DIS%</th>
+            <th>CASH<br>DIS%</th>
+            <th>DISC<br>AMOUNT</th>
+            <th>TAXABLE<br>AMOUNT</th>
+            <th>GST<br>%</th>
+            <th>GST<br>VALUE</th>
+            <th>NET<br>AMOUNT</th>
           </tr>
-        @endforeach
-        @for($i = 0; $i < max(0, 15 - count($items)); $i++)
-          <tr class="empty-row">
-            <td colspan="17"></td>
-          </tr>
-        @endfor
-        <tr>
-          <td colspan="17" style="border-top:1px solid #000; height:1px; padding:0;"></td>
-        </tr>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @foreach($items as $item)
+            <tr>
+              <td>{{ number_format((float) ($item['PMRP'] ?? 0), 2) }}</td>
+              <td>{{ $item['BATCHNO'] ?? '' }}</td>
+              <td>{{ $item['EXPIRYDATE'] ?? '' }}</td>
+              <td>{{ substr($item['COMPNAME'] ?? '', 0, 8) }}</td>
+              <td class="left">{{ $item['ITEMNAME'] ?? '' }}</td>
+              <td>{{ $item['HSNCODE'] ?? '' }}</td>
+              <td>{{ $item['QUANTITY'] ?? 0 }}</td>
+              <td>{{ $item['FREE'] ?? 0 }}</td>
+              <td>{{ number_format((float) ($item['SRATE'] ?? 0), 2) }}</td>
+              <td>{{ number_format(((float) ($item['SRATE'] ?? 0)) * ((int) ($item['QUANTITY'] ?? 0)), 2) }}</td>
+              <td>{{ $item['DISCOUNT'] ?? 0 }}</td>
+              <td>{{ $item['CASHDISPER'] ?? 0 }}</td>
+              <td>{{ number_format((float) ($item['DISVALUE'] ?? 0), 2) }}</td>
+              <td>{{ number_format((float) ($item['TAXABLE'] ?? 0), 2) }}</td>
+              <td>{{ $item['GSTRATE'] ?? 0 }}</td>
+              <td>{{ number_format((float) ($item['GSTVALUE'] ?? 0), 2) }}</td>
+              <td>{{ number_format((float) ($item['TOTALAMOUNT'] ?? 0), 2) }}</td>
+            </tr>
+          @endforeach
+        </tbody>
+      </table>
+      {{-- This div stretches to fill all leftover vertical space --}}
+      <div class="spacer-row"></div>
+    </div>
 
+    {{-- FOOTER --}}
     <table class="footer-table">
       <tr>
         <td class="footer-left">
-          <div style="padding:2px; border-bottom:1px solid #000; font-size:7.5px;"><strong>Message :</strong></div>
+          <div style="padding:2px; border-bottom:1px solid #000; font-size:7.5px;">
+            <strong>Message : THIS REPORT IS ONLY FOR RECORD PURPOSES.</strong>
+          </div>
           <table class="bank-gst-table">
             <tr>
               <td class="bank-cell">
-                <table style="width:100%; border:none; padding:0; margin:0;">
+                <table style="width:100%; border-collapse:collapse;">
                   <tr>
-                    <td style="border:none; padding:0; width:60%;">
+                    <td style="border:none; padding:0; width:60%; vertical-align:top;">
                       <strong><u>Bank Details</u></strong><br>
-                      Bank : HDFC Bank<br>Br : Palace Road, Tcr<br>A.c No : 50200043969997<br>IFSC : HDFC0000057
+                      Bank : HDFC Bank<br>
+                      Br : Palace Road, Tcr<br>
+                      A.c No : 50200043969997<br>
+                      IFSC : HDFC0000057
                     </td>
-                    <td style="border:none; padding:0; width:40%; text-align:right;">
+                    <td style="border:none; padding:0; width:40%; text-align:right; vertical-align:top;">
                       <img src="https://chart.googleapis.com/chart?chs=60x60&cht=qr&chl=upi://pay?pa=leo@hdfcbank"
                         style="width:40px; height:40px;" alt="QR">
                     </td>
@@ -455,24 +496,28 @@
               </td>
               <td class="gst-cell">
                 <table class="inner-gst-table">
-                  <tr>
-                    <th>GST%</th>
-                    <th>TAXABLE</th>
-                    <th>CGST</th>
-                    <th>SGST</th>
-                    <th>IGST</th>
-                    <th>TOTALGST</th>
-                  </tr>
-                  @foreach($gstBreakup as $rate => $g)
+                  <thead>
                     <tr>
-                      <td>{{ $rate }}</td>
-                      <td>{{ number_format($g['taxable'], 2) }}</td>
-                      <td>{{ number_format($g['cgst'], 2) }}</td>
-                      <td>{{ number_format($g['sgst'], 2) }}</td>
-                      <td>{{ number_format($g['igst'], 2) }}</td>
-                      <td>{{ number_format($g['total'], 2) }}</td>
+                      <th>GST%</th>
+                      <th>TAXABLE</th>
+                      <th>CGST</th>
+                      <th>SGST</th>
+                      <th>IGST</th>
+                      <th>TOTALGST</th>
                     </tr>
-                  @endforeach
+                  </thead>
+                  <tbody>
+                    @foreach($gstBreakup as $rate => $g)
+                      <tr>
+                        <td>{{ $rate }}</td>
+                        <td>{{ number_format($g['taxable'], 2) }}</td>
+                        <td>{{ number_format($g['cgst'], 2) }}</td>
+                        <td>{{ number_format($g['sgst'], 2) }}</td>
+                        <td>{{ number_format($g['igst'], 2) }}</td>
+                        <td>{{ number_format($g['total'], 2) }}</td>
+                      </tr>
+                    @endforeach
+                  </tbody>
                 </table>
                 <table class="prep-table" style="margin-top:1px;">
                   <tr>
@@ -487,19 +532,24 @@
           <div style="padding:2px; border-bottom:1px solid #000; font-size:7.5px;">
             <strong>RS in words :</strong> {{ $words }}
           </div>
-          <div style="padding:2px; font-size:6.5px;">
-            <strong>Declaraton :</strong> We hereby warrenty that t he medicine purchased under this memo do not contravene in any way the provision of Secton 18 of the Drug &amp; Cosmetcs Act 1940.<br>
-            (1) Goods once sold will not be taken back.(2) Subject to Thrissur jurisdicton only.(3) Interest @18% on overdue payments.(4) Please check Batchno &amp; MRP on NPPA products on delivery.(5) We do not take any responsibility for losses of goods.(6) Payments made in cash should always be against duly signed receipts
+          <div style="padding:2px; font-size:6.5px; line-height:1.3;">
+            <strong>Declaration :</strong> We hereby warrenty that the medicine purchased under this memo do not
+            contravene in any way the provision of Section 18 of the Drug &amp; Cosmetics Act 1940.<br>
+            (1) Goods once sold will not be taken back. (2) Subject to Thrissur jurisdiction only. (3) Interest @18%
+            on overdue payments. (4) Please check Batchno &amp; MRP on NPPA products on delivery. (5) We do not take
+            any responsibility for losses of goods. (6) Payments made in cash should always be against duly signed
+            receipts.
           </div>
           @if(!empty($qrCodeBase64))
-          <div style="margin-top: 5px; text-align: center;">
-            <img src="{{ $qrCodeBase64 }}" alt="UPI QR Code" style="width: 70px; height: 70px; border: 1px solid #000; padding: 2px;">
-            <div style="font-size: 7px; font-weight: bold; margin-top: 2px;">SCAN & PAY INSTANTLY</div>
-          </div>
+            <div style="margin-top:4px; text-align:center;">
+              <img src="{{ $qrCodeBase64 }}" alt="UPI QR Code"
+                style="width:60px; height:60px; border:1px solid #000; padding:2px;">
+              <div style="font-size:7px; font-weight:bold; margin-top:2px;">SCAN &amp; PAY INSTANTLY</div>
+            </div>
           @endif
         </td>
         <td class="footer-right">
-          <table class="summary-table">
+          <table class="summary-table" style="width:100%;">
             <tr>
               <td>Gross Amount</td>
               <td>{{ number_format($grossAmount, 2) }}</td>
@@ -541,11 +591,13 @@
               <td>{{ number_format($billAmount, 2) }}</td>
             </tr>
           </table>
-          <div style="text-align:right; font-size:7px; font-weight:bold; margin-top:10px;">For LEO
-            PHARMA<br>DISTRIBUTORS P.LTD</div>
+          <div style="text-align:right; font-size:7px; font-weight:bold; margin-top:10px;">
+            For LEO PHARMA<br>DISTRIBUTORS P.LTD
+          </div>
         </td>
       </tr>
     </table>
+
   </div>
 </body>
 

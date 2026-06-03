@@ -34,6 +34,7 @@ class SyncErpBillStatuses extends Command
         
         $page = 1;
         $totalSynced = 0;
+        $allSyncedBillNos = [];
         
         while (true) {
             $this->info("Fetching page {$page}...");
@@ -72,7 +73,7 @@ class SyncErpBillStatuses extends Command
                         'cucode'      => (string) ($row['cucode'] ?? ''),
                         'cuname'      => (string) ($row['cuname'] ?? ''),
                         'netamount'   => (float) ($row['netamount'] ?? 0),
-                        'amtreceived' => (float) ($row['amtreceived'] ?? 0),
+                        'amtreceived' => (float) ($row['amountrecieved'] ?? $row['amtreceived'] ?? $row['amount_received'] ?? 0),
                         'settled'     => (string) ($row['settled'] ?? 'N'),
                         'ddays'       => (int) ($row['ddays'] ?? 0),
                         'lockdays'    => (int) ($row['lockdays'] ?? 0),
@@ -88,6 +89,11 @@ class SyncErpBillStatuses extends Command
                         ['billno'],
                         ['date', 'cucode', 'cuname', 'netamount', 'amtreceived', 'settled', 'ddays', 'lockdays', 'updated_at']
                     );
+                    
+                    foreach ($records as $rec) {
+                        $allSyncedBillNos[] = $rec['billno'];
+                    }
+
                     $count = count($records);
                     $totalSynced += $count;
                     $this->info("Upserted {$count} records from page {$page}. (Total: {$totalSynced})");
@@ -99,6 +105,15 @@ class SyncErpBillStatuses extends Command
                 $this->error("Exception on page {$page}: " . $e->getMessage());
                 Log::error("ERP Sync exception on page {$page}", ['error' => $e->getMessage()]);
                 break;
+            }
+        } // End of while(true) loop
+
+        // Fix the ghost bills issue: anything NOT returned by this API is fully settled.
+        // But since this is just a cache table, we can just delete the missing rows from the cache.
+        if (!empty($allSyncedBillNos)) {
+            $deletedCount = ErpBillStatus::whereNotIn('billno', $allSyncedBillNos)->delete();
+            if ($deletedCount > 0) {
+                $this->info("Cleared {$deletedCount} settled/ghost bills from local cache.");
             }
         }
         
