@@ -17,7 +17,7 @@ class OverviewController extends Controller
 
         // Total outstanding: mathematically accurate sum across all years
         $totalOutstanding = Bill::where('is_settled', false)
-            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - amount_received'));
+            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - IFNULL(amount_received, 0)'));
 
         // Bills sent today: count from local synced bills
         $billsToday = \App\Models\Bill::whereDate('bill_date', $today)->count();
