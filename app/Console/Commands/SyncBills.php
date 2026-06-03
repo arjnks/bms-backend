@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class SyncBills extends Command
 {
-    protected $signature = "bms:sync-bills {--test-cucode= : Test sync for a specific customer code} {--days=365 : Number of past days to sync}";
+    protected $signature = "bms:sync-bills {--test-cucode= : Test sync for a specific customer code} {--days=3650 : Number of past days to sync}";
     protected $description = "Iterate over all customers and fetch their bills using the date range filters";
 
     protected ExternalBillingService $billing;

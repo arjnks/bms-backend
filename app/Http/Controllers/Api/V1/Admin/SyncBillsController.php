@@ -23,7 +23,7 @@ class SyncBillsController extends Controller
             return response()->json(['error' => 'EXTERNAL_BILLING_URL not configured.'], 503);
         }
 
-        $fromDate = now()->subMonths(24)->format('Y-m-d');
+        $fromDate = now()->subMonths(120)->format('Y-m-d');
         $toDate   = now()->format('Y-m-d');
 
         // Include customers with either external_cucode or customer_code set
