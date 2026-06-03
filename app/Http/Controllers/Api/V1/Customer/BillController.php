@@ -54,8 +54,8 @@ class BillController extends Controller
         $billsQuery = Bill::where('customer_id', $customerId);
         
         $outstanding_amount = (clone $billsQuery)
-            ->whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->sum('grand_total');
+            ->where('is_settled', false)
+            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - amount_received'));
 
         $bills = $billsQuery->orderBy('due_date', 'asc')->get()->map(function ($bill) {
             return array_merge($bill->toArray(), [

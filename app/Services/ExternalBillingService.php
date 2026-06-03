@@ -121,6 +121,63 @@ class ExternalBillingService
         return [];
     }
 
+    /**
+     * Fetch unpaid historical dues across all pages.
+     */
+    public function getUnpaidBills(): array
+    {
+        $allBills = [];
+        $page = 1;
+
+        try {
+            while (true) {
+                $response = Http::timeout(60)
+                    ->withOptions([
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    ])
+                    ->withHeaders([
+                        'ngrok-skip-browser-warning' => 'true'
+                    ])
+                    ->get("{$this->baseUrl}/API/announcements/bill_master_acc1.php", [
+                        'page' => $page
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    
+                    if (isset($data['status']) && $data['status'] === 'empty') {
+                        break;
+                    }
+
+                    $batch = $data['data'] ?? [];
+                    if (empty($batch)) {
+                        break;
+                    }
+
+                    $allBills = array_merge($allBills, $batch);
+
+                    // Check if we reached the last page
+                    // The API returns count=50000 and per_page=50000. If count < per_page, or if empty array returned next time, it will stop.
+                    if (count($batch) < ($data['per_page'] ?? 50000)) {
+                        break; 
+                    }
+
+                    $page++;
+                } else {
+                    Log::error("ExternalBillingService::getUnpaidBills ERP returned non-success on page $page", [
+                        'status' => $response->status(),
+                        'body' => $response->body()
+                    ]);
+                    break;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("ExternalBillingService::getUnpaidBills failed", ['error' => $e->getMessage()]);
+        }
+        
+        return $allBills;
+    }
+
     public function getCachedFilePath(string $format, string $billNo): string
     {
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);

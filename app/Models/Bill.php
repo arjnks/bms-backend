@@ -28,6 +28,10 @@ class Bill extends Model
         'bill_file_url',
         'bill_file_type',
         'uploaded_by',
+        'amount_received',
+        'is_settled',
+        'aging_days',
+        'lock_days',
     ];
 
     protected $casts = [
