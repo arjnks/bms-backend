@@ -488,8 +488,8 @@
             <strong>RS in words :</strong> {{ $words }}
           </div>
           <div style="padding:2px; font-size:6.5px;">
-            <strong>Declaration :</strong> We hereby warranty that the medicine purchased under this memo do not
-            contravene in any way the provision of Section 18 of the Drug &amp; Cosmetics Act 1940.
+            <strong>Declaraton :</strong> We hereby warrenty that t he medicine purchased under this memo do not contravene in any way the provision of Secton 18 of the Drug &amp; Cosmetcs Act 1940.<br>
+            (1) Goods once sold will not be taken back.(2) Subject to Thrissur jurisdicton only.(3) Interest @18% on overdue payments.(4) Please check Batchno &amp; MRP on NPPA products on delivery.(5) We do not take any responsibility for losses of goods.(6) Payments made in cash should always be against duly signed receipts
           </div>
           @if(!empty($qrCodeBase64))
           <div style="margin-top: 5px; text-align: center;">
