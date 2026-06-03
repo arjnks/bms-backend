@@ -35,25 +35,104 @@ class BillController extends Controller
 
     public function overview()
     {
+        $now   = Carbon::now();
+        $today = Carbon::today();
+
+        // --- KPI numbers ---
         $total_outstanding = Bill::where('is_settled', false)
             ->sum(DB::raw('grand_total - IFNULL(amount_received, 0)'));
-        $bills_today = Bill::whereDate('bill_date', Carbon::today())->count();
-        $overdue_count = Bill::where('due_date', '<', Carbon::today())->where('is_settled', false)->count();
-        
-        $total_bills = Bill::count();
-        $paid_bills = Bill::where('payment_status', 'paid')->count();
+
+        $overdue_amount = Bill::where('due_date', '<', $today)
+            ->where('is_settled', false)
+            ->sum(DB::raw('grand_total - IFNULL(amount_received, 0)'));
+
+        $bills_today   = Bill::whereDate('bill_date', $today)->count();
+        $overdue_count = Bill::where('due_date', '<', $today)->where('is_settled', false)->count();
+
+        $total_bills     = Bill::count();
+        $paid_bills      = Bill::where('payment_status', 'paid')->count();
         $collection_rate = $total_bills > 0 ? round(($paid_bills / $total_bills) * 100, 2) : 0;
-        
-        $reminders_this_month = ReminderLog::whereMonth('sent_at', Carbon::now()->month)
-            ->whereYear('sent_at', Carbon::now()->year)
+
+        $reminders_this_month = ReminderLog::whereMonth('sent_at', $now->month)
+            ->whereYear('sent_at', $now->year)
             ->count();
 
+        // --- Recent Activity: last 10 bills updated ---
+        $recent_bills = Bill::with('customer.user:id,name')
+            ->orderByDesc('updated_at')
+            ->limit(10)
+            ->get()
+            ->map(fn ($b) => [
+                'id'              => $b->id,
+                'invoice_no'      => $b->invoice_no,
+                'customer_name'   => $b->customer?->user?->name ?? 'Unknown',
+                'customer_id'     => $b->customer_id,
+                'payment_status'  => $b->payment_status,
+                'grand_total'     => $b->grand_total,
+                'amount_received' => $b->amount_received,
+                'due_amount'      => max(0, $b->grand_total - $b->amount_received),
+                'bill_date'       => $b->bill_date?->format('d M Y'),
+                'updated_at'      => $b->updated_at?->diffForHumans(),
+            ]);
+
+        // --- Top Overdue: customers with highest total outstanding due ---
+        $top_overdue = Bill::select(
+                'customer_id',
+                DB::raw('SUM(grand_total - IFNULL(amount_received,0)) as total_due'),
+                DB::raw('COUNT(*) as bill_count')
+            )
+            ->where('is_settled', false)
+            ->where('due_date', '<', $today)
+            ->groupBy('customer_id')
+            ->orderByDesc('total_due')
+            ->limit(5)
+            ->with('customer.user:id,name')
+            ->get()
+            ->map(fn ($row) => [
+                'customer_id'   => $row->customer_id,
+                'customer_name' => $row->customer?->user?->name ?? 'Unknown',
+                'total_due'     => round($row->total_due, 2),
+                'bill_count'    => $row->bill_count,
+            ]);
+
+        // --- Monthly Collections: last 12 months ---
+        $chart_collections = collect(range(11, 0))->map(function ($i) use ($now) {
+            $month = $now->copy()->subMonths($i);
+            $collected = Bill::whereYear('bill_date', $month->year)
+                ->whereMonth('bill_date', $month->month)
+                ->sum('amount_received');
+            return [
+                'month'     => $month->format('M'),
+                'year'      => $month->year,
+                'collected' => round($collected, 2),
+            ];
+        })->values();
+
+        // --- Payment Status donut ---
+        $unpaid_count = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
+            ->where('is_settled', false)->count();
+        $chart_payment_status = [
+            'paid'    => $paid_bills,
+            'due_soon'=> Bill::where('is_settled', false)
+                ->whereBetween('due_date', [$today, $today->copy()->addDays(7)])
+                ->count(),
+            'overdue' => $overdue_count,
+        ];
+
         return response()->json([
-            'total_outstanding' => $total_outstanding,
-            'bills_today' => $bills_today,
-            'overdue_count' => $overdue_count,
-            'collection_rate' => $collection_rate,
-            'reminders_this_month' => $reminders_this_month,
+            'total_outstanding'     => $total_outstanding,
+            'overdue_amount'        => $overdue_amount,
+            'bills_today'           => $bills_today,
+            'overdue_count'         => $overdue_count,
+            'collection_rate'       => $collection_rate,
+            'reminders_this_month'  => $reminders_this_month,
+            'total_unpaid'          => $unpaid_count + $overdue_count,
+            'dues_this_month'       => $total_outstanding,
+            'dues_this_month_count' => $unpaid_count + $overdue_count,
+            'recent_bills'          => $recent_bills,
+            'top_overdue'           => $top_overdue,
+            'chart_collections'     => $chart_collections,
+            'chart_payment_status'  => $chart_payment_status,
         ]);
     }
 
