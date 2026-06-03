@@ -15,9 +15,9 @@ class OverviewController extends Controller
         $thisMonth = Carbon::now()->startOfMonth();
         $thirtyAgo = Carbon::today()->subDays(30);
 
-        // Total outstanding: sum of ALL unpaid/rejected bills (not just this month)
-        $totalOutstanding = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->sum('grand_total');
+        // Total outstanding: mathematically accurate sum across all years
+        $totalOutstanding = Bill::where('is_settled', false)
+            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - amount_received'));
 
         // Bills sent today: count from local synced bills
         $billsToday = \App\Models\Bill::whereDate('bill_date', $today)->count();
@@ -25,24 +25,16 @@ class OverviewController extends Controller
         // Total customers
         $totalCustomers = \App\Models\User::where('role', 'customer')->count();
 
-        // Overdue count: unpaid bills where due_date has already passed
-        // Also catches bills without a due_date but bill_date is > 30 days old
-        $overdueCount = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
-            ->where(function ($q) use ($today, $thirtyAgo) {
-                $q->where(function ($q2) use ($today) {
-                    // explicit due_date that has passed
-                    $q2->whereNotNull('due_date')
-                       ->whereDate('due_date', '<', $today);
-                })->orWhere(function ($q2) use ($thirtyAgo) {
-                    // no due_date but bill is older than 30 days
-                    $q2->whereNull('due_date')
-                       ->whereDate('bill_date', '<', $thirtyAgo);
-                });
+        // Overdue count: using the new aging_days and lock_days logic
+        $overdueCount = Bill::where('is_settled', false)
+            ->where(function ($q) {
+                $q->whereColumn('aging_days', '>', 'lock_days')
+                  ->orWhere('payment_status', 'overdue');
             })
             ->count();
 
         // Total unpaid bill count (useful for context in the UI)
-        $totalUnpaid = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])->count();
+        $totalUnpaid = Bill::where('is_settled', false)->count();
 
         // Collection Rate: paid bills / total bills (all time)
         $totalBills = Bill::count();
