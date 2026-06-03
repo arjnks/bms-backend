@@ -99,13 +99,13 @@ class ReconcileBills extends Command
 
                     // --- The Reconciliation Logic ---
                     // If the invoice number is NOT in our unpaid list, it is settled.
-                    $isSettled     = !isset($unpaidInvoiceNos[$invoiceNo]);
-                    $paymentStatus = $isSettled ? 'paid' : (
-                        ($dueDate->isPast() ? 'overdue' : 'unpaid')
-                    );
-                    $status        = $isSettled ? 'paid' : (
-                        ($dueDate->isPast() ? 'overdue' : 'unpaid')
-                    );
+                    $isSettled = !isset($unpaidInvoiceNos[$invoiceNo]);
+
+                    // payment_status ENUM only allows: unpaid, payment_submitted, proof_rejected, paid
+                    $paymentStatus = $isSettled ? 'paid' : 'unpaid';
+
+                    // status column tracks aging more granularly
+                    $status = $isSettled ? 'paid' : ($dueDate->isPast() ? 'overdue' : 'unpaid');
 
                     $upsertRows[] = [
                         'customer_id'    => $customerId,
