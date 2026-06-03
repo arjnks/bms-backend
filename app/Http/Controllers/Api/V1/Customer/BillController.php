@@ -100,7 +100,7 @@ class BillController extends Controller
                     }
                 }
             }
-            $lineItems = $bill->lineItems;
+            $lineItems = $bill->lineItems()->get();
         } catch (\Illuminate\Database\QueryException $e) {
             \Illuminate\Support\Facades\Log::warning('bill_line_items table missing on customer show', ['error' => $e->getMessage()]);
         }

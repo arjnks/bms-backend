@@ -35,9 +35,10 @@ class BillController extends Controller
 
     public function overview()
     {
-        $total_outstanding = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])->sum('grand_total');
-        $bills_today = Bill::whereDate('created_at', Carbon::today())->count();
-        $overdue_count = Bill::where('due_date', '<', Carbon::today())->where('payment_status', 'unpaid')->count();
+        $total_outstanding = Bill::where('is_settled', false)
+            ->sum(DB::raw('grand_total - IFNULL(amount_received, 0)'));
+        $bills_today = Bill::whereDate('bill_date', Carbon::today())->count();
+        $overdue_count = Bill::where('due_date', '<', Carbon::today())->where('is_settled', false)->count();
         
         $total_bills = Bill::count();
         $paid_bills = Bill::where('payment_status', 'paid')->count();
@@ -132,9 +133,11 @@ class BillController extends Controller
                                     'gst_pct'      => $item['GSTRATE'] ?? 0,
                                     'line_total'   => $item['TOTALAMOUNT'] ?? 0,
                                 ]);
-                            } catch (\Exception $e) {}
+                            } catch (\Exception $e) {
+                                Log::error('Failed to create line item dynamically', ['bill_id' => $bill->id, 'error' => $e->getMessage(), 'item' => $item]);
+                            }
                         }
-                        $lineItems = $bill->lineItems; // reload after saving
+                        $lineItems = $bill->lineItems()->get(); // reload from DB after saving
                     }
                 } catch (\Throwable $e) {
                     Log::warning('ERP bill details unavailable on admin bill show', [

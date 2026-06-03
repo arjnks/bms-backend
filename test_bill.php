@@ -1,8 +1,5 @@
 <?php
-$bill = \App\Models\Bill::where("invoice_no", "LPH/2627/107453")->first();
-if ($bill && $bill->customer) {
-    echo "Found! Cucode: " . $bill->customer->external_cucode . "\n";
-} else {
-    echo "Bill not found in local DB.\n";
-}
+$b = App\Models\Bill::where("invoice_no", "LPH/2627/110154")->first();
+$c = app(App\Http\Controllers\Api\V1\Admin\BillController::class);
+echo $c->show($b->id)->getContent();
 

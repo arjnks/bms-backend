@@ -1,16 +1,9 @@
 <?php
-try {
-    $admin = \App\Models\User::where("role", "admin")->first();
-    $token = $admin->createToken("test_admin")->plainTextToken;
-    $endpoints = [
-        "/api/v1/admin/reports/aging",
-        "/api/v1/admin/reports/collections",
-        "/api/v1/admin/overview",
-        "/api/v1/admin/bills?is_overdue=true"
-    ];
-    foreach($endpoints as $e) {
-        $res = \Illuminate\Support\Facades\Http::withToken($token)->get("http://127.0.0.1:8003" . $e);
-        echo $e . " -> Status: " . $res->status() . "\n";
-    }
-} catch (Exception $ex) { echo $ex->getMessage(); }
+$url = "https://unknowing-relight-civic.ngrok-free.dev/API/announcements/bill_master.php";
+$ch = curl_init($url);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["ngrok-skip-browser-warning: true"]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+$status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+echo "Status: $status\nBody: " . substr($res, 0, 500) . "\n";
 
