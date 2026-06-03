@@ -486,6 +486,12 @@
             <strong>Declaration :</strong> We hereby warranty that the medicine purchased under this memo do not
             contravene in any way the provision of Section 18 of the Drug &amp; Cosmetics Act 1940.
           </div>
+          @if(!empty($qrCodeBase64))
+          <div style="margin-top: 5px; text-align: center;">
+            <img src="{{ $qrCodeBase64 }}" alt="UPI QR Code" style="width: 70px; height: 70px; border: 1px solid #000; padding: 2px;">
+            <div style="font-size: 7px; font-weight: bold; margin-top: 2px;">SCAN & PAY INSTANTLY</div>
+          </div>
+          @endif
         </td>
         <td class="footer-right">
           <table class="summary-table">

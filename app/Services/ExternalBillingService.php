@@ -347,7 +347,20 @@ class ExternalBillingService
     public function generatePdf(array $items, string $billNo, string $billDate, string $customerName): string
     {
         $netAmount = $items[0]['NETAMOUNT'] ?? 0;
-        $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount'))
+        
+        // Generate UPI Payment String
+        $upiId = env('BUSINESS_UPI_ID', 'placeholder@upi');
+        $payeeName = env('BUSINESS_PAYEE_NAME', 'Leo Pharma');
+        $upiString = "upi://pay?pa={$upiId}&pn=" . urlencode($payeeName) . "&am={$netAmount}&cu=INR&tn=Inv_{$billNo}";
+        
+        // Generate QR Code if package is installed
+        $qrCodeBase64 = '';
+        if (class_exists(\SimpleSoftwareIO\QrCode\Facades\QrCode::class)) {
+            $qrSvg = \SimpleSoftwareIO\QrCode\Facades\QrCode::size(120)->generate($upiString);
+            $qrCodeBase64 = 'data:image/svg+xml;base64,' . base64_encode($qrSvg);
+        }
+
+        $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount', 'qrCodeBase64'))
             ->setPaper('a4', 'portrait');
 
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
