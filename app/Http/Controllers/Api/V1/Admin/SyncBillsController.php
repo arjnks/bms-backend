@@ -193,6 +193,56 @@ class SyncBillsController extends Controller
             usleep(200000); // 200ms
         }
 
+        // Historical Dues Sync
+        try {
+            $unpaidBills = $billingService->getUnpaidBills();
+            $customersByCucode = Customer::whereNotNull('external_cucode')->get()->keyBy('external_cucode');
+            $histUpserted = 0;
+
+            $upsertData = [];
+            $now = now()->format('Y-m-d H:i:s');
+
+            foreach ($unpaidBills as $b) {
+                $customer = $customersByCucode[$b['cucode'] ?? ''] ?? null;
+                if (!$customer) continue;
+                $invoiceNo = (string)($b['billno'] ?? '');
+                if (!$invoiceNo) continue;
+
+                $billDate = isset($b['date']) ? Carbon::parse($b['date'])->format('Y-m-d') : null;
+                $netamount = (float) ($b['netamount'] ?? 0);
+                $amtreceived = (float) ($b['amtreceived'] ?? 0);
+                $isSettled = (($b['settled'] ?? 'N') === 'Y');
+
+                $upsertData[] = [
+                    "customer_id" => $customer->id,
+                    "invoice_no" => $invoiceNo,
+                    "bill_date" => $billDate,
+                    "subtotal" => $netamount,
+                    "grand_total" => $netamount,
+                    "amount_received" => $amtreceived,
+                    "is_settled" => $isSettled,
+                    "aging_days" => (int) ($b['ddays'] ?? 0),
+                    "lock_days" => (int) ($b['lockdays'] ?? 0),
+                    "payment_status" => $isSettled ? 'paid' : 'unpaid',
+                    "status" => $isSettled ? 'paid' : 'unpaid',
+                    "created_at" => $now,
+                    "updated_at" => $now,
+                ];
+                $histUpserted++;
+
+                if (count($upsertData) >= 1000) {
+                    Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
+                    $upsertData = [];
+                }
+            }
+            if (!empty($upsertData)) {
+                Bill::upsert($upsertData, ['customer_id', 'invoice_no'], ['bill_date', 'subtotal', 'grand_total', 'amount_received', 'is_settled', 'aging_days', 'lock_days', 'payment_status', 'status', 'updated_at']);
+            }
+            $totalSynced += $histUpserted;
+        } catch (\Exception $e) {
+            $errors[] = 'Failed to sync historical unpaid dues: ' . $e->getMessage();
+        }
+
         return response()->json([
             'status'       => 'done',
             'total_synced' => $totalSynced,
