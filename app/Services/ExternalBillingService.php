@@ -163,9 +163,12 @@ class ExternalBillingService
                         CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
                         CURLOPT_SSL_VERIFYHOST => 0,
                         CURLOPT_SSL_VERIFYPEER => 0,
+                        CURLOPT_FORBID_REUSE => true,
+                        CURLOPT_FRESH_CONNECT => true,
                     ])
                     ->withHeaders([
-                        'ngrok-skip-browser-warning' => 'true'
+                        'ngrok-skip-browser-warning' => 'true',
+                        'Connection' => 'close'
                     ])
                     ->get("{$this->baseUrl}/API/announcements/bill_master_acc1.php", [
                         'page' => $page
