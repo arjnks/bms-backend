@@ -27,27 +27,54 @@ class ExternalBillingService
      */
     public function getCustomers(): array
     {
-        try {
-            $response = Http::timeout(60)
-                ->withOptions([
-                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                ])
-                ->withHeaders([
-                    'ngrok-skip-browser-warning' => 'true'
-                ])
-                ->get("{$this->baseUrl}/API/announcements/customer_details.php");
+        $allCustomers = [];
+        $page = 1;
 
-            if ($response->successful()) {
-                $data = $response->json();
-                if (isset($data['status']) && $data['status'] === 'empty') {
-                    return [];
+        try {
+            while (true) {
+                $response = Http::timeout(60)
+                    ->withOptions([
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_FORBID_REUSE => true,
+                        CURLOPT_FRESH_CONNECT => true,
+                    ])
+                    ->withHeaders([
+                        'ngrok-skip-browser-warning' => 'true',
+                        'Connection' => 'close'
+                    ])
+                    ->get("{$this->baseUrl}/API/announcements/customer_details.php", [
+                        'page' => $page
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['status']) && $data['status'] === 'empty') {
+                        break;
+                    }
+                    
+                    $batch = $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
+                    if (empty($batch)) {
+                        break;
+                    }
+                    
+                    $allCustomers = array_merge($allCustomers, $batch);
+                    
+                    // If the API provides pagination metadata
+                    if (isset($data['total_pages']) && $page >= $data['total_pages']) {
+                        break;
+                    }
+                    
+                    $page++;
+                } else {
+                    Log::error("ExternalBillingService::getCustomers ERP returned non-success on page {$page}");
+                    break;
                 }
-                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
             }
+            return $allCustomers;
         } catch (\Exception $e) {
             Log::error('ExternalBillingService::getCustomers failed', ['error' => $e->getMessage()]);
         }
-        return [];
+        return $allCustomers;
     }
 
     /**
@@ -183,8 +210,9 @@ class ExternalBillingService
     public function getCachedFilePath(string $format, string $billNo): string
     {
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
-        $ext = $format === 'excel' ? 'xlsx' : $format;
-        return "bills/{$format}/bill_{$safeBillNo}.{$ext}";
+        $ext = strtolower($format) === 'excel' ? 'xlsx' : (strtolower($format) === 'csv' ? 'csv' : 'pdf');
+        $dir = $ext === 'pdf' ? 'pdf_v2' : $ext;
+        return "bills/{$dir}/bill_{$safeBillNo}.{$ext}";
     }
 
     /**
@@ -363,14 +391,15 @@ class ExternalBillingService
         }
 
         $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount', 'qrCodeBase64'))
-            ->setPaper('a4', 'portrait');
+            ->setPaper('a4', 'landscape');
 
         $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
         $pdf->save($tmpPath);
         
         $r2Path = $this->getCachedFilePath('pdf', $billNo);
-        Storage::disk('r2')->putFileAs('bills/pdf', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.pdf");
+        $folder = dirname($r2Path);
+        Storage::disk('r2')->putFileAs($folder, new \Illuminate\Http\File($tmpPath), basename($r2Path));
         @unlink($tmpPath);
         
         return $r2Path;
