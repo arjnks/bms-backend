@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\BillController as AdminBillController;
 use App\Http\Controllers\Api\V1\Admin\UserApprovalController;
 use App\Http\Controllers\Api\V1\Admin\ReminderRuleController;
 use App\Http\Controllers\Api\V1\Admin\ReportController;
+use App\Http\Controllers\Api\V1\Admin\SettingController;
 use App\Http\Controllers\Api\V1\Customer\BillController as CustomerBillController;
 use App\Http\Controllers\Api\V1\Customer\PreferenceController as CustomerPreferenceController;
 use App\Http\Controllers\Api\V1\Customer\ExternalBillController;
@@ -81,6 +82,10 @@ Route::prefix('v1')->group(function () {
             Route::patch('/reminder-rules/{id}', [ReminderRuleController::class, 'update']);
             Route::delete('/reminder-rules/{id}', [ReminderRuleController::class, 'destroy']);
             
+            // Settings
+            Route::get('/settings', [SettingController::class, 'index']);
+            Route::post('/settings', [SettingController::class, 'update']);
+
             // Reports
             Route::get('/reports/aging', [ReportController::class, 'aging']);
             Route::get('/reports/collections', [ReportController::class, 'collections']);
