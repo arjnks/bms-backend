@@ -13,7 +13,6 @@ use App\Http\Controllers\Api\V1\Customer\PreferenceController as CustomerPrefere
 use App\Http\Controllers\Api\V1\Customer\ExternalBillController;
 use App\Http\Controllers\Api\V1\Admin\SyncController;
 use App\Http\Controllers\Api\V1\Admin\SyncBillsController;
-use App\Http\Controllers\Api\V1\Admin\ReportController;
 
 Route::prefix('v1')->group(function () {
     // Auth Routes
