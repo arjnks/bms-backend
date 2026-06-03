@@ -10,6 +10,13 @@ Artisan::command('inspire', function () {
 
 Schedule::command('reminders:process')->dailyAt('09:00');
 
+// Nightly: sync unpaid bills from accounting ledger (streaming, ghost-bill cleanup)
+// Runs at 1am before the deep bill sync so outstanding totals are accurate by morning
+Schedule::command('sync:unpaid-bills')->dailyAt('01:00')->withoutOverlapping()->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Scheduled sync:unpaid-bills failed.');
+    });
+
 // Nightly deep sync: pull fresh customers + 30 days of bills from ERP at 2am
 Schedule::command('bms:sync-bills --days=30')->dailyAt('02:00')->withoutOverlapping()->runInBackground();
 
