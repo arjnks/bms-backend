@@ -14,9 +14,9 @@ class ReportController extends Controller
         $today = Carbon::today();
         
         $bills = \Illuminate\Support\Facades\DB::table('bills')
-            ->whereIn('payment_status', ['unpaid', 'proof_rejected'])
+            ->where('is_settled', false)
             ->where('due_date', '<', $today->toDateString())
-            ->get(['due_date', 'grand_total']);
+            ->get(['due_date', 'grand_total', 'amount_received']);
 
         $stats = [
             'count_0_30' => 0, 'total_0_30' => 0,
@@ -26,7 +26,7 @@ class ReportController extends Controller
 
         foreach ($bills as $bill) {
             $daysOverdue = Carbon::parse($bill->due_date)->diffInDays($today);
-            $amt = (float) $bill->grand_total;
+            $amt = (float) max(0, $bill->grand_total - ($bill->amount_received ?? 0));
             
             if ($daysOverdue <= 30) {
                 $stats['count_0_30']++;
