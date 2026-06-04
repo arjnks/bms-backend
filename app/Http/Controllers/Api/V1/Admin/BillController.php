@@ -260,7 +260,13 @@ class BillController extends Controller
 
         $proofUrl = null;
         if ($bill->proof_screenshot) {
-            try { $proofUrl = Storage::disk('public')->url($bill->proof_screenshot); } catch (\Exception $e) {}
+            try {
+                // proof_screenshot is an R2 key — generate a 60-minute signed URL
+                $proofUrl = Storage::disk('r2')->temporaryUrl($bill->proof_screenshot, now()->addMinutes(60));
+            } catch (\Exception $e) {
+                // fallback: return the raw path so the admin can at least see what's stored
+                $proofUrl = $bill->proof_screenshot;
+            }
         }
 
         return response()->json([
@@ -347,11 +353,18 @@ class BillController extends Controller
 
             $path = null;
             if ($request->hasFile('bill_file')) {
-                $path = $request->file('bill_file')->store('bills', 'public');
+                // Upload directly to R2 — no local storage
+                $r2Key   = 'bills/uploads/' . $bill->invoice_no . '_' . $request->file('bill_file')->getClientOriginalName();
+                $r2Key   = preg_replace('/[^A-Za-z0-9._\-\/]/', '_', $r2Key);
+                Storage::disk('r2')->put($r2Key, file_get_contents($request->file('bill_file')->getRealPath()), [
+                    'ContentType' => $request->file('bill_file')->getMimeType(),
+                ]);
+                $path = Storage::disk('r2')->temporaryUrl($r2Key, now()->addYears(10));
             } elseif ($validated['bill_file_type'] === 'pdf') {
-                $pdf = Pdf::loadView('pdf.bill', ['bill' => $bill])->setPaper('a4', 'landscape');
-                $path = 'bills/' . $bill->invoice_no . '.pdf';
-                Storage::disk('public')->put($path, $pdf->output());
+                $pdf   = Pdf::loadView('pdf.bill', ['bill' => $bill])->setPaper('a4', 'landscape');
+                $r2Key = 'bills/pdf/' . preg_replace('/[^A-Za-z0-9._\-]/', '_', $bill->invoice_no) . '.pdf';
+                Storage::disk('r2')->put($r2Key, $pdf->output(), ['ContentType' => 'application/pdf']);
+                $path = Storage::disk('r2')->temporaryUrl($r2Key, now()->addYears(10));
             }
 
             $bill->update(['bill_file_url' => $path]);

@@ -156,14 +156,15 @@ class BillController extends Controller
             return redirect()->away($bill->bill_file_url);
         }
 
-        $storedPath = $this->localBillPath($bill->bill_file_url);
-        if ($storedPath && Storage::disk('public')->exists($storedPath) && !$requestedFormat) {
-            $filename = basename($storedPath) ?: 'bill_' . $this->safeBillNo($bill->invoice_no);
-            $mime = Storage::disk('public')->mimeType($storedPath) ?: 'application/octet-stream';
-
-            return Storage::disk('public')->download($storedPath, $filename, [
-                'Content-Type' => $mime,
-            ]);
+        // All bills are now served from R2 or generated live from ERP.
+        // Legacy local-disk bills (stored as relative paths) are redirected via R2 if they happen to exist there.
+        if ($bill->bill_file_url && !$this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
+            // Might be an R2 key stored as a relative path
+            $r2Key = ltrim($bill->bill_file_url, '/');
+            if (Storage::disk('r2')->exists($r2Key)) {
+                return redirect()->away(Storage::disk('r2')->temporaryUrl($r2Key, now()->addMinutes(30)));
+            }
+            // Not in R2 either — fall through to live generation below
         }
 
         $format = $requestedFormat ?? $bill->customer->preferred_bill_format ?? 'pdf';
@@ -251,7 +252,15 @@ class BillController extends Controller
             'screenshot' => 'required|file|mimes:jpeg,png,jpg,pdf|max:5120',
         ]);
 
-        $path = $request->file('screenshot')->store('proofs', 'public');
+        // Upload proof directly to R2 — no local storage
+        $ext    = $request->file('screenshot')->getClientOriginalExtension();
+        $r2Key  = 'proofs/' . $bill->invoice_no . '_' . time() . '.' . $ext;
+        Storage::disk('r2')->put(
+            $r2Key,
+            file_get_contents($request->file('screenshot')->getRealPath()),
+            ['ContentType' => $request->file('screenshot')->getMimeType()]
+        );
+        $path = $r2Key; // store the R2 key; admin view generates a signed URL from this
 
         $bill->update([
             'payment_method'        => $validated['payment_method'],
