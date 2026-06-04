@@ -119,6 +119,9 @@ class ExternalBillingService
         $numericId = $matches[1] ?? $billNo;
 
         try {
+            $url = "{$this->baseUrl}/API/announcements/bill_details.php";
+            \Illuminate\Support\Facades\Log::info("Requesting bill details", ['url' => $url, 'billno' => $numericId]);
+            
             $response = Http::timeout(60)
                 ->withOptions([
                     CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
@@ -127,9 +130,11 @@ class ExternalBillingService
                 ])
                 ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
                 ->asMultipart()
-                ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
+                ->post($url, [
                     ['name' => 'billno', 'contents' => (string)$numericId]
                 ]);
+
+            \Illuminate\Support\Facades\Log::info("Bill details response", ['status' => $response->status(), 'body' => $response->body()]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -137,14 +142,9 @@ class ExternalBillingService
                     return [];
                 }
                 return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
-            } else {
-                Log::error("ExternalBillingService::getBillDetails ERP returned non-success for $billNo", [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
             }
         } catch (\Exception $e) {
-            Log::error("ExternalBillingService::getBillDetails failed for $billNo", ['error' => $e->getMessage()]);
+            \Illuminate\Support\Facades\Log::error("ExternalBillingService::getBillDetails failed for $billNo", ['error' => $e->getMessage()]);
         }
         return [];
     }
