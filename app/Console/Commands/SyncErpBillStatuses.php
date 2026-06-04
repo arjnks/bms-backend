@@ -82,21 +82,26 @@ class SyncErpBillStatuses extends Command
                 }
                 
                 if (!empty($records)) {
-                    // Bulk upsert the chunk
-                    // We use billno as the unique key to match on, and update all other columns
-                    ErpBillStatus::upsert(
-                        $records,
-                        ['billno'],
-                        ['date', 'cucode', 'cuname', 'netamount', 'amtreceived', 'settled', 'ddays', 'lockdays', 'updated_at']
-                    );
+                    // Bulk upsert the chunk in pieces to avoid MySQL max_allowed_packet errors or timeouts
+                    $chunks = array_chunk($records, 1000);
+                    $chunkCount = count($chunks);
                     
-                    foreach ($records as $rec) {
-                        $allSyncedBillNos[] = $rec['billno'];
+                    foreach ($chunks as $i => $chunk) {
+                        ErpBillStatus::upsert(
+                            $chunk,
+                            ['billno'],
+                            ['date', 'cucode', 'cuname', 'netamount', 'amtreceived', 'settled', 'ddays', 'lockdays', 'updated_at']
+                        );
+                        
+                        foreach ($chunk as $rec) {
+                            $allSyncedBillNos[] = $rec['billno'];
+                        }
+                        $this->info("  - Upserted chunk " . ($i + 1) . " of {$chunkCount} (" . count($chunk) . " records)");
                     }
 
                     $count = count($records);
                     $totalSynced += $count;
-                    $this->info("Upserted {$count} records from page {$page}. (Total: {$totalSynced})");
+                    $this->info("Completed page {$page}. Upserted {$count} records. (Total: {$totalSynced})");
                 }
                 
                 $page++;
