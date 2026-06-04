@@ -100,32 +100,8 @@ class SyncUnpaidBills extends Command
 
         $this->info("Processed {$totalProcessed} bills. Skipped {$totalSkipped} (unknown customer / missing invoice).");
 
-        // ---------------------------------------------------------------
-        // Ghost bill cleanup (the ~2cr extra bug)
-        // ---------------------------------------------------------------
-        // The ERP's unpaid ledger only returns UNPAID bills.
-        // Any bill we upserted in this run will have updated_at >= $syncStartedAt.
-        // Any still-unsettled bill in our DB with updated_at < $syncStartedAt was
-        // NOT returned by the API — meaning the ERP considers it fully paid.
-        // We set those to is_settled=true and amount_received=grand_total.
-        // ---------------------------------------------------------------
-        if ($totalProcessed > 0) {
-            $ghostCount = Bill::where('is_settled', false)
-                ->where('updated_at', '<', $syncStartedAt)
-                ->update([
-                    'is_settled'      => true,
-                    'amount_received' => DB::raw('grand_total'),
-                    'payment_status'  => 'paid',
-                    'status'          => 'paid',
-                    'updated_at'      => now(),
-                ]);
-
-            if ($ghostCount > 0) {
-                $this->info("Marked {$ghostCount} ghost/settled bills as fully paid (dropped from ERP unpaid ledger).");
-            } else {
-                $this->info("No ghost bills found — all unsettled bills are still in the ERP ledger.");
-            }
-        }
+        // Ghost bill cleanup removed. The ERP API truncates at 50,000 records,
+        // so we cannot assume that bills missing from the API are fully paid.
 
         $this->info("Sync complete.");
     }

@@ -108,14 +108,7 @@ class SyncErpBillStatuses extends Command
             }
         } // End of while(true) loop
 
-        // Fix the ghost bills issue: anything NOT returned by this API is fully settled.
-        // But since this is just a cache table, we can just delete the missing rows from the cache.
-        if (!empty($allSyncedBillNos)) {
-            $deletedCount = ErpBillStatus::whereNotIn('billno', $allSyncedBillNos)->delete();
-            if ($deletedCount > 0) {
-                $this->info("Cleared {$deletedCount} settled/ghost bills from local cache.");
-            }
-        }
+        // Ghost bill cleanup removed. The ERP API truncates at 50,000 records.
         
         $this->info("Sync finished. Total records synced: {$totalSynced}");
     }
