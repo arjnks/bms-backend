@@ -179,7 +179,12 @@ class BillController extends Controller
         $items = $billingService->getBillDetails((string) $bill->invoice_no);
 
         if (empty($items)) {
-            return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);
+            $debugUrl = config('services.external_billing.url');
+            return response()->json([
+                'message' => 'No file associated and ERP fetch failed.',
+                'debug_url' => rtrim($debugUrl, '/'),
+                'invoice_no' => $bill->invoice_no,
+            ], 404);
         }
 
         $customerName = $bill->customer->user->name ?? 'Customer';
