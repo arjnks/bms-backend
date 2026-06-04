@@ -30,7 +30,7 @@ class SyncErpBillStatuses extends Command
     public function handle()
     {
         $this->info('Starting ERP Bill Status sync...');
-        $baseUrl = rtrim(config('services.external_billing.url', 'https://unknowing-relight-civic.ngrok-free.dev'), '/');
+        $baseUrl = rtrim(config('services.external_billing.url', 'https://billing.leopharma.tech'), '/');
         
         $page = 1;
         $totalSynced = 0;

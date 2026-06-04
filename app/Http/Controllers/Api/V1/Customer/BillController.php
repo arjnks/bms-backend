@@ -139,6 +139,7 @@ class BillController extends Controller
 
     public function streamByToken(Request $request, $token, ExternalBillingService $billingService)
     {
+        \Illuminate\Support\Facades\Log::info("StreamByToken called with token: " . $token);
         $data = \Illuminate\Support\Facades\Cache::get("bill_token_{$token}");
         if (!$data) {
             return response()->json(['message' => 'Invalid or expired token.'], 403);
@@ -149,6 +150,7 @@ class BillController extends Controller
 
     public function stream(Request $request, $id, ExternalBillingService $billingService, $requestedFormat = null)
     {
+        \Illuminate\Support\Facades\Log::info("Stream method called for bill id: " . $id . " format: " . $requestedFormat);
         // No customerId check because it's a signed route, but we must ensure it exists.
         $bill = Bill::with('customer.user')->findOrFail($id);
 
@@ -230,7 +232,7 @@ class BillController extends Controller
                     ->deleteFileAfterSend(true);
             }
 
-            return response()->json(['message' => 'File generation failed.'], 500);
+            return response()->json(['message' => 'File generation failed. Error: ' . $e->getMessage()], 500);
         }
     }
 

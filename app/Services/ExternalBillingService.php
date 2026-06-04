@@ -19,7 +19,7 @@ class ExternalBillingService
 
     public function __construct()
     {
-        $this->baseUrl = rtrim(config('services.external_billing.url', 'https://unknowing-relight-civic.ngrok-free.dev'), '/');
+        $this->baseUrl = rtrim(config('services.external_billing.url', 'https://billing.leopharma.tech'), '/');
     }
 
     /**
@@ -112,6 +112,7 @@ class ExternalBillingService
 
     public function getBillDetails(string $billNo): array
     {
+        \Illuminate\Support\Facades\Log::info("getBillDetails called for: " . $billNo);
         // The ERP API throws an SQL error if we pass the full string (e.g. LPH/2627/96609)
         // It expects only the numeric ID.
         preg_match('/(\d+)$/', $billNo, $matches);
@@ -311,11 +312,7 @@ class ExternalBillingService
         $writer = new Xlsx($spreadsheet);
         $writer->save($tmpPath);
         
-        $r2Path = $this->getCachedFilePath('excel', $billNo);
-        Storage::disk('r2')->putFileAs('bills/excel', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.xlsx");
-        @unlink($tmpPath);
-        
-        return $r2Path;
+        return $tmpPath;
     }
 
     /**
@@ -382,11 +379,7 @@ class ExternalBillingService
 
         fclose($fp);
         
-        $r2Path = $this->getCachedFilePath('csv', $billNo);
-        Storage::disk('r2')->putFileAs('bills/csv', new \Illuminate\Http\File($tmpPath), "bill_{$safeBillNo}.csv");
-        @unlink($tmpPath);
-        
-        return $r2Path;
+        return $tmpPath;
     }
 
     /**
@@ -415,12 +408,7 @@ class ExternalBillingService
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
         $pdf->save($tmpPath);
         
-        $r2Path = $this->getCachedFilePath('pdf', $billNo);
-        $folder = dirname($r2Path);
-        Storage::disk('r2')->putFileAs($folder, new \Illuminate\Http\File($tmpPath), basename($r2Path));
-        @unlink($tmpPath);
-        
-        return $r2Path;
+        return $tmpPath;
     }
 }
 
