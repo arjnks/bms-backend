@@ -188,26 +188,49 @@ class BillController extends Controller
 
         switch ($format) {
             case 'pdf':
-                $path     = $billingService->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $filename = "bill_{$safeBillNo}.pdf";
-                $mime     = 'application/pdf';
+                $localPath = $billingService->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $filename  = "bill_{$safeBillNo}.pdf";
+                $mime      = 'application/pdf';
                 break;
 
             case 'csv':
-                $path     = $billingService->generateCsv($items, $bill->invoice_no, $billDate);
-                $filename = "bill_{$safeBillNo}.csv";
-                $mime     = 'text/csv';
+                $localPath = $billingService->generateCsv($items, $bill->invoice_no, $billDate);
+                $filename  = "bill_{$safeBillNo}.csv";
+                $mime      = 'text/csv';
                 break;
 
             default: // excel
-                $path     = $billingService->generateExcel($items, $billNoStr, $billDate);
-                $filename = "bill_{$safeBillNo}.xlsx";
-                $mime     = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                $localPath = $billingService->generateExcel($items, $billNoStr, $billDate);
+                $filename  = "bill_{$safeBillNo}.xlsx";
+                $mime      = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
                 break;
         }
 
-        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
-        return redirect()->away($url);
+        // Upload the locally-generated file to R2, then return a signed URL.
+        // We cache it under the same r2Path so repeated downloads skip regeneration.
+        try {
+            $fileContents = file_get_contents($localPath);
+            Storage::disk('r2')->put($r2Path, $fileContents, [
+                'ContentType' => $mime,
+            ]);
+            @unlink($localPath); // clean up local temp file
+
+            $url = Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return redirect()->away($url);
+        } catch (\Exception $e) {
+            // R2 unavailable — stream directly from local temp file as a fallback
+            \Illuminate\Support\Facades\Log::warning('R2 upload failed, streaming local file', [
+                'bill'  => $bill->invoice_no,
+                'error' => $e->getMessage(),
+            ]);
+
+            if (file_exists($localPath)) {
+                return response()->download($localPath, $filename, ['Content-Type' => $mime])
+                    ->deleteFileAfterSend(true);
+            }
+
+            return response()->json(['message' => 'File generation failed.'], 500);
+        }
     }
 
     public function submitPayment(Request $request, $id)
