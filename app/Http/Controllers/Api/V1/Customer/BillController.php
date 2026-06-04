@@ -209,30 +209,14 @@ class BillController extends Controller
                 break;
         }
 
-        // Upload the locally-generated file to R2, then return a signed URL.
-        // We cache it under the same r2Path so repeated downloads skip regeneration.
+        // The service methods now directly upload to R2 and return the $r2Path
+        $r2Path = $localPath; // localPath is actually the r2Path returned by the service
+        
         try {
-            $fileContents = file_get_contents($localPath);
-            Storage::disk('r2')->put($r2Path, $fileContents, [
-                'ContentType' => $mime,
-            ]);
-            @unlink($localPath); // clean up local temp file
-
-            $url = Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
             return redirect()->away($url);
         } catch (\Exception $e) {
-            // R2 unavailable — stream directly from local temp file as a fallback
-            \Illuminate\Support\Facades\Log::warning('R2 upload failed, streaming local file', [
-                'bill'  => $bill->invoice_no,
-                'error' => $e->getMessage(),
-            ]);
-
-            if (file_exists($localPath)) {
-                return response()->download($localPath, $filename, ['Content-Type' => $mime])
-                    ->deleteFileAfterSend(true);
-            }
-
-            return response()->json(['message' => 'File generation failed. Error: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'Failed to generate secure download link. Error: ' . $e->getMessage()], 500);
         }
     }
 

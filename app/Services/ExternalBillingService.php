@@ -312,7 +312,11 @@ class ExternalBillingService
         $writer = new Xlsx($spreadsheet);
         $writer->save($tmpPath);
         
-        return $tmpPath;
+        $r2Path = $this->getCachedFilePath('excel', $billNo);
+        \Illuminate\Support\Facades\Storage::disk('r2')->putFileAs('bills/excel', new \Illuminate\Http\File($tmpPath), basename($r2Path));
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 
     /**
@@ -379,7 +383,11 @@ class ExternalBillingService
 
         fclose($fp);
         
-        return $tmpPath;
+        $r2Path = $this->getCachedFilePath('csv', $billNo);
+        \Illuminate\Support\Facades\Storage::disk('r2')->putFileAs('bills/csv', new \Illuminate\Http\File($tmpPath), basename($r2Path));
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 
     /**
@@ -408,7 +416,12 @@ class ExternalBillingService
         $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
         $pdf->save($tmpPath);
         
-        return $tmpPath;
+        $r2Path = $this->getCachedFilePath('pdf', $billNo);
+        $folder = dirname($r2Path);
+        \Illuminate\Support\Facades\Storage::disk('r2')->putFileAs($folder, new \Illuminate\Http\File($tmpPath), basename($r2Path));
+        @unlink($tmpPath);
+        
+        return $r2Path;
     }
 }
 
