@@ -42,7 +42,7 @@ class SyncErpBillStatuses extends Command
             try {
                 $response = Http::timeout(60)
                     ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
-                    ->get("{$baseUrl}/API/announcements/bill_master_acc.php", ['page' => $page]);
+                    ->get("{$baseUrl}/API/announcements/bill_master_acc1.php", ['page' => $page]);
 
                 if (!$response->successful()) {
                     $this->error("Failed to fetch page {$page}. HTTP " . $response->status());
