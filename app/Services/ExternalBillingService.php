@@ -313,7 +313,8 @@ class ExternalBillingService
         $writer->save($tmpPath);
         
         $r2Path = $this->getCachedFilePath('excel', $billNo);
-        \Illuminate\Support\Facades\Storage::disk('r2')->putFileAs('bills/excel', new \Illuminate\Http\File($tmpPath), basename($r2Path));
+        $folder = dirname($r2Path);
+        \Illuminate\Support\Facades\Storage::disk('r2')->putFileAs($folder, new \Illuminate\Http\File($tmpPath), basename($r2Path));
         @unlink($tmpPath);
         
         return $r2Path;
