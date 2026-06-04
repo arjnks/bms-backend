@@ -351,23 +351,21 @@ class BillController extends Controller
                 }
             }
 
-            $path = null;
+            $r2Key = null;
             if ($request->hasFile('bill_file')) {
-                // Upload directly to R2 — no local storage
-                $r2Key   = 'bills/uploads/' . $bill->invoice_no . '_' . $request->file('bill_file')->getClientOriginalName();
-                $r2Key   = preg_replace('/[^A-Za-z0-9._\-\/]/', '_', $r2Key);
+                // Store the R2 key, not a signed URL — signed URLs are generated at download time
+                $r2Key  = 'bills/uploads/' . $bill->invoice_no . '_' . $request->file('bill_file')->getClientOriginalName();
+                $r2Key  = preg_replace('/[^A-Za-z0-9._\-\/]/', '_', $r2Key);
                 Storage::disk('r2')->put($r2Key, file_get_contents($request->file('bill_file')->getRealPath()), [
                     'ContentType' => $request->file('bill_file')->getMimeType(),
                 ]);
-                $path = Storage::disk('r2')->temporaryUrl($r2Key, now()->addYears(10));
             } elseif ($validated['bill_file_type'] === 'pdf') {
                 $pdf   = Pdf::loadView('pdf.bill', ['bill' => $bill])->setPaper('a4', 'landscape');
                 $r2Key = 'bills/pdf/' . preg_replace('/[^A-Za-z0-9._\-]/', '_', $bill->invoice_no) . '.pdf';
                 Storage::disk('r2')->put($r2Key, $pdf->output(), ['ContentType' => 'application/pdf']);
-                $path = Storage::disk('r2')->temporaryUrl($r2Key, now()->addYears(10));
             }
 
-            $bill->update(['bill_file_url' => $path]);
+            $bill->update(['bill_file_url' => $r2Key]);
 
             return response()->json($bill->load('customer.user'), 201);
         });
