@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessRemindersCommand extends Command
 {
-    protected $signature = 'reminders:process';
+    protected $signature = 'reminders:process {--dry-run : Simulate the command without sending WhatsApp texts}';
     protected $description = 'Process reminder rules and dispatch WhatsApp jobs';
 
     public function handle()
@@ -79,12 +79,22 @@ class ProcessRemindersCommand extends Command
                     $invoiceList
                 ];
 
+                if ($this->option('dry-run')) {
+                    $this->info("[DRY RUN] Would send reminder to {$bill->customer->user->name} ({$phone}) for Bill {$bill->invoice_no} (Rule ID: {$rule->id})");
+                    $jobsDispatched++;
+                    continue;
+                }
+
                 SendWhatsAppReminderJob::dispatch($phone, 'payment_reminder_v1', $variables, $bill->customer_id, $bill->id, $rule->id);
                 $jobsDispatched++;
             }
         }
 
-        $this->info("Dispatched {$jobsDispatched} reminder jobs.");
-        Log::info("ProcessRemindersCommand completed: {$jobsDispatched} jobs dispatched.");
+        if ($this->option('dry-run')) {
+            $this->info("Dry run completed: {$jobsDispatched} reminders would be dispatched.");
+        } else {
+            $this->info("Dispatched {$jobsDispatched} reminder jobs.");
+            Log::info("ProcessRemindersCommand completed: {$jobsDispatched} jobs dispatched.");
+        }
     }
 }
