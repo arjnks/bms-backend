@@ -54,18 +54,29 @@ class WhatsAppService
         }
 
         $normalized = $this->normalizePhone($phone);
+        $isUltramsg = str_contains(strtolower($this->apiUrl), 'ultramsg');
 
         try {
-            $response = Http::withToken($this->accessToken)
-                ->post("{$this->apiUrl}/{$this->phoneId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'to'                => $normalized,
-                    'type'              => 'text',
-                    'text'              => ['body' => $message],
+            if ($isUltramsg) {
+                // UltraMsg API format
+                $response = Http::post("{$this->apiUrl}/{$this->phoneId}/messages/chat", [
+                    'token' => $this->accessToken,
+                    'to'    => $normalized,
+                    'body'  => $message,
                 ]);
+            } else {
+                // Meta Graph API format
+                $response = Http::withToken($this->accessToken)
+                    ->post("{$this->apiUrl}/{$this->phoneId}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to'                => $normalized,
+                        'type'              => 'text',
+                        'text'              => ['body' => $message],
+                    ]);
+            }
 
             if ($response->successful()) {
-                Log::info("WhatsApp sent to {$normalized}");
+                Log::info("WhatsApp text sent to {$normalized} via " . ($isUltramsg ? 'UltraMsg' : 'Meta'));
                 return true;
             }
 
@@ -82,9 +93,15 @@ class WhatsAppService
     {
         if (!$this->configured) {
             Log::warning("WhatsApp not configured — skipping template {$templateName} to {$phone}.");
-            // Optionally, fallback to standard send() with simulated text if we wanted, 
-            // but we'll respect the true template structure for now.
             return false;
+        }
+
+        $isUltramsg = str_contains(strtolower($this->apiUrl), 'ultramsg');
+
+        if ($isUltramsg) {
+            // UltraMsg does not support Meta templates natively. We must compile the text locally and send as raw chat.
+            $compiledMessage = $this->compileTemplate($templateName, $variables);
+            return $this->send($phone, $compiledMessage);
         }
 
         $normalized = $this->normalizePhone($phone);
@@ -117,7 +134,7 @@ class WhatsAppService
                 ->post("{$this->apiUrl}/{$this->phoneId}/messages", $payload);
 
             if ($response->successful()) {
-                Log::info("WhatsApp Template '{$templateName}' sent to {$normalized}");
+                Log::info("WhatsApp Template '{$templateName}' sent to {$normalized} via Meta");
                 return true;
             }
 
@@ -128,6 +145,26 @@ class WhatsAppService
             Log::error("WhatsApp Template exception for {$normalized}: " . $e->getMessage());
             return false;
         }
+    }
+
+    private function compileTemplate(string $templateName, array $variables): string
+    {
+        $templates = [
+            'new_bill_uploaded_v1' => "*New Bill Uploaded* 📄\n\nHi {{1}},\nA new bill has been uploaded to your portal.\n\nInvoice No: {{2}}\nAmount: ₹{{3}}\n\nPlease log in to view and pay.",
+            'payment_reminder_v1' => "*Payment Reminder* ⚠️\n\nHi {{1}},\nYou have {{2}} outstanding bill(s) pending on your account.\n\n{{3}}\n\nPlease log in to the portal and clear them immediately to avoid service disruption.",
+            'payment_received_v1' => "*Payment Received* ⏳\n\nHi {{1}},\nWe have received your payment proof.\n\nInvoice No: {{2}}\nUTR: {{3}}\n\nOur team will verify it shortly.",
+            'payment_verified_v1' => "*Payment Verified* ✅\n\nHi {{1}},\nYour payment has been successfully VERIFIED.\n\nInvoice No: {{2}}\n\nThank you for your business!",
+            'payment_rejected_v1' => "*Payment Rejected* ❌\n\nHi {{1}},\nYour payment proof could NOT be verified.\n\nInvoice No: {{2}}\nReason: {{3}}\n\nPlease upload a clear proof or contact us.",
+        ];
+
+        $text = $templates[$templateName] ?? "Notification: {$templateName}";
+        
+        foreach ($variables as $index => $value) {
+            $key = '{{' . ($index + 1) . '}}';
+            $text = str_replace($key, (string)$value, $text);
+        }
+
+        return $text;
     }
 
     /**
