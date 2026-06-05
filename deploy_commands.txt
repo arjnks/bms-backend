@@ -1,0 +1,711 @@
+echo "Updating .env file..."
+sed -i 's|^EXTERNAL_BILLING_URL=.*|EXTERNAL_BILLING_URL=https://billing.leopharma.tech|' .env
+if ! grep -q "^EXTERNAL_BILLING_URL=" .env; then echo "EXTERNAL_BILLING_URL=https://billing.leopharma.tech" >> .env; fi
+
+echo "Replacing ExternalBillingService.php..."
+cat << 'EOF' > app/Services/ExternalBillingService.php
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use Barryvdh\DomPDF\Facade\Pdf;
+
+class ExternalBillingService
+{
+    protected string $baseUrl;
+
+    public function __construct()
+    {
+        $this->baseUrl = rtrim(config('services.external_billing.url', 'https://billing.leopharma.tech'), '/');
+    }
+
+    /**
+     * Fetch all customers from external API.
+     */
+    public function getCustomers(): array
+    {
+        $allCustomers = [];
+        $page = 1;
+
+        try {
+            while (true) {
+                $response = Http::timeout(60)
+                    ->withOptions([
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_FORBID_REUSE => true,
+                        CURLOPT_FRESH_CONNECT => true,
+                    ])
+                    ->withHeaders([
+                        'ngrok-skip-browser-warning' => 'true',
+                        'Connection' => 'close'
+                    ])
+                    ->get("{$this->baseUrl}/API/announcements/customer_details.php", [
+                        'page' => $page
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['status']) && $data['status'] === 'empty') {
+                        break;
+                    }
+                    
+                    $batch = $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
+                    if (empty($batch)) {
+                        break;
+                    }
+                    
+                    $allCustomers = array_merge($allCustomers, $batch);
+                    
+                    // If the API provides pagination metadata
+                    if (isset($data['total_pages']) && $page >= $data['total_pages']) {
+                        break;
+                    }
+                    
+                    $page++;
+                } else {
+                    Log::error("ExternalBillingService::getCustomers ERP returned non-success on page {$page}");
+                    break;
+                }
+            }
+            return $allCustomers;
+        } catch (\Exception $e) {
+            Log::error('ExternalBillingService::getCustomers failed', ['error' => $e->getMessage()]);
+        }
+        return $allCustomers;
+    }
+
+    /**
+     * Fetch bills for a customer within a date range.
+     */
+    public function getBills(string $cucode, string $fromDate, string $toDate): array
+    {
+        try {
+            $response = Http::timeout(60)
+                ->withOptions([
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
+                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->asMultipart()
+                ->post("{$this->baseUrl}/API/announcements/bill_master.php", [
+                    ['name' => 'cucode', 'contents' => $cucode],
+                    ['name' => 'from_date', 'contents' => $fromDate],
+                    ['name' => 'to_date', 'contents' => $toDate]
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (isset($data['status']) && $data['status'] === 'empty') {
+                    return [];
+                }
+                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
+            }
+        } catch (\Exception $e) {
+            Log::error("ExternalBillingService::getBills failed for $cucode", ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
+    public function getBillDetails(string $billNo): array
+    {
+        \Illuminate\Support\Facades\Log::info("getBillDetails called for: " . $billNo);
+        // The ERP API throws an SQL error if we pass the full string (e.g. LPH/2627/96609)
+        // It expects only the numeric ID.
+        preg_match('/(\d+)$/', $billNo, $matches);
+        $numericId = $matches[1] ?? $billNo;
+
+        try {
+            $response = Http::timeout(60)
+                ->withOptions([
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
+                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->asMultipart()
+                ->post("{$this->baseUrl}/API/announcements/bill_details.php", [
+                    ['name' => 'billno', 'contents' => (string)$numericId]
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (isset($data['status']) && $data['status'] === 'empty') {
+                    return [];
+                }
+                return $data['data'] ?? (is_array($data) && !isset($data['status']) ? $data : []);
+            } else {
+                Log::error("ExternalBillingService::getBillDetails ERP returned non-success for $billNo", [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error("ExternalBillingService::getBillDetails failed for $billNo", ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
+    /**
+     * Fetch unpaid historical dues across all pages.
+     * @deprecated Use streamUnpaidBills() for memory-efficient processing.
+     */
+    public function getUnpaidBills(): array
+    {
+        $allBills = [];
+        foreach ($this->streamUnpaidBills() as $batch) {
+            foreach ($batch as $bill) {
+                $allBills[] = $bill;
+            }
+        }
+        return $allBills;
+    }
+
+    /**
+     * Stream unpaid historical dues page-by-page as a generator.
+     * Yields one page's worth of records at a time to avoid memory exhaustion.
+     * Use this for large datasets (100k+ records).
+     *
+     * @return \Generator yields array[] — one page of bill records per iteration
+     */
+    public function streamUnpaidBills(): \Generator
+    {
+        $page = 1;
+
+        try {
+            while (true) {
+                $response = Http::timeout(90)
+                    ->withOptions([
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_SSL_VERIFYHOST => 0,
+                        CURLOPT_SSL_VERIFYPEER => 0,
+                        CURLOPT_FORBID_REUSE => true,
+                        CURLOPT_FRESH_CONNECT => true,
+                    ])
+                    ->withHeaders([
+                        'ngrok-skip-browser-warning' => 'true',
+                        'Connection' => 'close'
+                    ])
+                    ->get("{$this->baseUrl}/API/announcements/bill_master_acc1.php", [
+                        'page' => $page
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+
+                    if (isset($data['status']) && $data['status'] === 'empty') {
+                        break;
+                    }
+
+                    $batch = $data['data'] ?? [];
+                    if (empty($batch)) {
+                        break;
+                    }
+
+                    // Yield one page at a time — caller processes it, then GC can free it
+                    yield $batch;
+
+                    if (count($batch) < ($data['per_page'] ?? 50000)) {
+                        break;
+                    }
+
+                    $page++;
+                } else {
+                    Log::error("ExternalBillingService::streamUnpaidBills ERP returned non-success on page $page", [
+                        'status' => $response->status(),
+                        'body'   => $response->body()
+                    ]);
+                    break;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("ExternalBillingService::streamUnpaidBills failed", ['error' => $e->getMessage()]);
+        }
+    }
+
+    public function getCachedFilePath(string $format, string $billNo): string
+    {
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $ext = strtolower($format) === 'excel' ? 'xlsx' : (strtolower($format) === 'csv' ? 'csv' : 'pdf');
+        $dir = $ext === 'pdf' ? 'pdf_v2' : $ext;
+        return "bills/{$dir}/bill_{$safeBillNo}.{$ext}";
+    }
+
+    /**
+     * Generate an Excel (.xlsx) file from bill line items.
+     * Returns the file path (temp file).
+     */
+    public function generateExcel(array $items, string $billNo, string $billDate): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Bill');
+
+        // Column headers
+        $headers = [
+            'A' => 'BILL NO', 'B' => 'BILL DATE', 'C' => 'COMPANY', 'D' => 'ITEM CODE',
+            'E' => 'ITEM NAME', 'F' => 'PACKING', 'G' => 'BATCH NO', 'H' => 'EXP DT',
+            'I' => 'QTY', 'J' => 'FREE', 'K' => 'PTR', 'L' => 'MRP', 'M' => 'AMOUNT',
+            'N' => 'SCH.DIS%', 'O' => 'DISCOUNT', 'P' => 'DIS AMT', 'Q' => 'TAXABLE AMT',
+            'R' => 'GST %', 'S' => 'GST AMT', 'T' => 'VALUE', 'U' => 'NET AMOUNT', 'V' => 'HSNCODE'
+        ];
+
+        $row = 1;
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue("{$col}{$row}", $label);
+        }
+
+        $sheet->getStyle("A1:V1")->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D3D3D3']],
+        ]);
+
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+
+        $row = 2;
+        foreach ($items as $item) {
+            $qty = $item['QUANTITY'] ?? 0;
+            $ptr = $item['SRATE'] ?? 0;
+            $amount = round($qty * $ptr, 2);
+
+            $expiry = '';
+            if (!empty($item['EXPIRYDATE'])) {
+                $expiry = \Carbon\Carbon::parse($item['EXPIRYDATE'])->format('d-m-Y');
+            }
+
+            $sheet->setCellValue("A{$row}", $billNo);
+            $sheet->setCellValue("B{$row}", $billDate);
+            $sheet->setCellValue("C{$row}", $item['COMPNAME'] ?? '');
+            $sheet->setCellValue("D{$row}", $item['ITEMCODE'] ?? '');
+            $sheet->setCellValue("E{$row}", $item['ITEMNAME'] ?? '');
+            $sheet->setCellValue("F{$row}", $item['PACKING'] ?? '');
+            $sheet->setCellValue("G{$row}", $item['BATCHNO'] ?? '');
+            $sheet->setCellValue("H{$row}", $expiry);
+            $sheet->setCellValue("I{$row}", $qty);
+            $sheet->setCellValue("J{$row}", $item['FREE'] ?? 0);
+            $sheet->setCellValue("K{$row}", $ptr);
+            $sheet->setCellValue("L{$row}", $item['PMRP'] ?? 0);
+            $sheet->setCellValue("M{$row}", $amount);
+            $sheet->setCellValue("N{$row}", $item['SCHDISPER'] ?? 0);
+            $sheet->setCellValue("O{$row}", $item['DISCOUNT'] ?? ($item['CASHDISPER'] ?? 0));
+            $sheet->setCellValue("P{$row}", $item['DISVALUE'] ?? 0);
+            $sheet->setCellValue("Q{$row}", $item['TAXABLE'] ?? 0);
+            $sheet->setCellValue("R{$row}", $item['GSTRATE'] ?? 0);
+            $sheet->setCellValue("S{$row}", $item['GSTVALUE'] ?? 0);
+            $sheet->setCellValue("T{$row}", $item['TOTALAMOUNT'] ?? 0);
+            $sheet->setCellValue("U{$row}", $netAmount);
+            $sheet->setCellValue("V{$row}", $item['HSNCODE'] ?? '');
+            
+            $row++;
+        }
+
+        // Auto-size columns
+        foreach (range('A', 'V') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.xlsx';
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($tmpPath);
+        
+        return $tmpPath;
+    }
+
+    /**
+     * Generate a CSV file from bill line items.
+     */
+    public function generateCsv(array $items, string $billNo, string $billDate = ''): string
+    {
+        if (empty($billDate)) {
+            $billDate = \Carbon\Carbon::now()->format('d-m-Y');
+        } else {
+            $billDate = \Carbon\Carbon::parse($billDate)->format('d-m-Y');
+        }
+
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.csv';
+        $fp = fopen($tmpPath, 'w');
+
+        // UTF-8 BOM for Excel compatibility
+        fwrite($fp, "\xEF\xBB\xBF");
+
+        fputcsv($fp, [
+            'BILL NO', 'BILL DATE', 'COMPANY', 'ITEM CODE', 'ITEM NAME', 'PACKING', 'BATCH NO', 'EXP DT',
+            'QTY', 'FREE', 'PTR', 'MRP', 'AMOUNT', 'SCH.DIS%', 'DISCOUNT', 'DIS AMT', 'TAXABLE AMT',
+            'GST %', 'GST AMT', 'VALUE', 'NET AMOUNT', 'HSNCODE'
+        ]);
+
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+
+        foreach ($items as $item) {
+            $qty = $item['QUANTITY'] ?? 0;
+            $ptr = $item['SRATE'] ?? 0;
+            $amount = round($qty * $ptr, 2);
+
+            $expiry = '';
+            if (!empty($item['EXPIRYDATE'])) {
+                $expiry = \Carbon\Carbon::parse($item['EXPIRYDATE'])->format('d-m-Y');
+            }
+
+            fputcsv($fp, [
+                $billNo,
+                $billDate,
+                $item['COMPNAME'] ?? '',
+                $item['ITEMCODE'] ?? '',
+                $item['ITEMNAME'] ?? '',
+                $item['PACKING'] ?? '',
+                $item['BATCHNO'] ?? '',
+                $expiry,
+                $qty,
+                $item['FREE'] ?? 0,
+                $ptr,
+                $item['PMRP'] ?? 0,
+                $amount,
+                $item['SCHDISPER'] ?? 0,
+                $item['DISCOUNT'] ?? ($item['CASHDISPER'] ?? 0),
+                $item['DISVALUE'] ?? 0,
+                $item['TAXABLE'] ?? 0,
+                $item['GSTRATE'] ?? 0,
+                $item['GSTVALUE'] ?? 0,
+                $item['TOTALAMOUNT'] ?? 0,
+                $netAmount,
+                $item['HSNCODE'] ?? '',
+            ]);
+        }
+
+        fclose($fp);
+        
+        return $tmpPath;
+    }
+
+    /**
+     * Generate a PDF invoice from bill line items.
+     */
+    public function generatePdf(array $items, string $billNo, string $billDate, string $customerName): string
+    {
+        $netAmount = $items[0]['NETAMOUNT'] ?? 0;
+        
+        // Generate UPI Payment String
+        $upiId = env('BUSINESS_UPI_ID', 'placeholder@upi');
+        $payeeName = env('BUSINESS_PAYEE_NAME', 'Leo Pharma');
+        $upiString = "upi://pay?pa={$upiId}&pn=" . urlencode($payeeName) . "&am={$netAmount}&cu=INR&tn=Inv_{$billNo}";
+        
+        // Generate QR Code if package is installed
+        $qrCodeBase64 = '';
+        if (class_exists(\SimpleSoftwareIO\QrCode\Facades\QrCode::class)) {
+            $qrSvg = \SimpleSoftwareIO\QrCode\Facades\QrCode::size(120)->generate($upiString);
+            $qrCodeBase64 = 'data:image/svg+xml;base64,' . base64_encode($qrSvg);
+        }
+
+        $pdf = Pdf::loadView('pdf.external_bill', compact('items', 'billNo', 'billDate', 'customerName', 'netAmount', 'qrCodeBase64'))
+            ->setPaper('a4', 'landscape');
+
+        $safeBillNo = str_replace(['/', '\\'], '_', $billNo);
+        $tmpPath = sys_get_temp_dir() . "/bill_{$safeBillNo}_" . time() . '.pdf';
+        $pdf->save($tmpPath);
+        
+        return $tmpPath;
+    }
+}
+
+
+EOF
+
+echo "Replacing BillController.php..."
+cat << 'EOF' > app/Http/Controllers/Api/V1/Customer/BillController.php
+<?php
+
+namespace App\Http\Controllers\Api\V1\Customer;
+
+use App\Http\Controllers\Controller;
+use App\Models\Bill;
+use App\Services\ExternalBillingService;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\Rule;
+
+class BillController extends Controller
+{
+    private function isExternalUrl(?string $url): bool
+    {
+        return is_string($url) && preg_match('/^https?:\/\//i', $url);
+    }
+
+    private function localBillPath(?string $path): ?string
+    {
+        if (!$path || $this->isExternalUrl($path)) {
+            return null;
+        }
+
+        $path = ltrim($path, '/');
+        if (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+
+        return $path;
+    }
+
+    private function safeBillNo(string $billNo): string
+    {
+        return preg_replace('/[^A-Za-z0-9._-]+/', '_', $billNo) ?: 'bill';
+    }
+
+    private function getCustomerId(Request $request)
+    {
+        // Get the customer ID associated with the currently authenticated user
+        $customer = $request->user()->customer;
+        if (!$customer) {
+            abort(403, 'User does not have an associated customer profile.');
+        }
+        return $customer->id;
+    }
+
+    public function index(Request $request)
+    {
+        $customerId = $this->getCustomerId($request);
+
+        $billsQuery = Bill::where('customer_id', $customerId);
+        
+        $outstanding_amount = (clone $billsQuery)
+            ->where('is_settled', false)
+            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - amount_received'));
+
+        $bills = $billsQuery->orderBy('due_date', 'asc')->get()->map(function ($bill) {
+            return array_merge($bill->toArray(), [
+                'bill_date' => $bill->bill_date?->format('d M Y'),
+                'due_date'  => $bill->due_date?->format('d M Y'),
+            ]);
+        });
+
+        return response()->json([
+            'has_outstanding'    => $outstanding_amount > 0,
+            'outstanding_amount' => $outstanding_amount,
+            'bills'              => $bills,
+        ]);
+    }
+
+    public function show(Request $request, $id)
+    {
+        $customerId = $this->getCustomerId($request);
+
+        $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
+
+        $lineItems = collect();
+        try {
+            if ($bill->lineItems()->count() === 0 && $bill->customer->external_cucode) {
+                // Fetch from ERP on the fly
+                $billingService = app(\App\Services\ExternalBillingService::class);
+                $items = $billingService->getBillDetails((string) $bill->invoice_no);
+                
+                if (!empty($items)) {
+                    foreach ($items as $item) {
+                        try {
+                            $bill->lineItems()->create([
+                                'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                                'hsn_code'     => $item['HSNCODE'] ?? null,
+                                'qty'          => $item['QUANTITY'] ?? 1,
+                                'unit'         => $item['UNIT'] ?? 'NOS',
+                                'rate'         => $item['SRATE'] ?? 0,
+                                'gst_pct'      => $item['GSTRATE'] ?? 0,
+                                'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                            ]);
+                        } catch (\Exception $e) {}
+                    }
+                }
+            }
+            $lineItems = $bill->lineItems()->get();
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Illuminate\Support\Facades\Log::warning('bill_line_items table missing on customer show', ['error' => $e->getMessage()]);
+        }
+
+        $billArray = $bill->toArray();
+        $billArray['line_items'] = $lineItems->values();
+        $billArray['lineItems'] = $billArray['line_items'];
+
+        return response()->json($billArray);
+    }
+
+    public function download(Request $request, $id)
+    {
+        $customerId = $this->getCustomerId($request);
+
+        $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
+
+        $requestedFormat = $request->query('format');
+
+        // Cloud-hosted bills can be opened directly. Local uploads must go
+        // through the signed stream route because Railway has no /storage link.
+        if ($this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
+            return response()->json(['download_url' => $bill->bill_file_url]);
+        }
+
+        $token = \Illuminate\Support\Str::random(64);
+        \Illuminate\Support\Facades\Cache::put("bill_token_{$token}", [
+            'id' => $bill->id,
+            'customer_id' => $customerId,
+            'format' => $requestedFormat,
+        ], now()->addMinutes(30));
+
+        $url = "/api/v1/customer/bills/stream-token/{$token}";
+        return response()->json(['download_url' => $url]);
+    }
+
+    public function streamByToken(Request $request, $token, ExternalBillingService $billingService)
+    {
+        \Illuminate\Support\Facades\Log::info("StreamByToken called with token: " . $token);
+        $data = \Illuminate\Support\Facades\Cache::get("bill_token_{$token}");
+        if (!$data) {
+            return response()->json(['message' => 'Invalid or expired token.'], 403);
+        }
+
+        return $this->stream($request, $data['id'], $billingService, $data['format'] ?? null);
+    }
+
+    public function stream(Request $request, $id, ExternalBillingService $billingService, $requestedFormat = null)
+    {
+        \Illuminate\Support\Facades\Log::info("Stream method called for bill id: " . $id . " format: " . $requestedFormat);
+        // No customerId check because it's a signed route, but we must ensure it exists.
+        $bill = Bill::with('customer.user')->findOrFail($id);
+
+        if ($this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
+            return redirect()->away($bill->bill_file_url);
+        }
+
+        // All bills are now served from R2 or generated live from ERP.
+        // Legacy local-disk bills (stored as relative paths) are redirected via R2 if they happen to exist there.
+        if ($bill->bill_file_url && !$this->isExternalUrl($bill->bill_file_url) && !$requestedFormat) {
+            // Might be an R2 key stored as a relative path
+            $r2Key = ltrim($bill->bill_file_url, '/');
+            if (Storage::disk('r2')->exists($r2Key)) {
+                return redirect()->away(Storage::disk('r2')->temporaryUrl($r2Key, now()->addMinutes(30)));
+            }
+            // Not in R2 either — fall through to live generation below
+        }
+
+        $format = $requestedFormat ?? $bill->customer->preferred_bill_format ?? 'pdf';
+        $r2Path = $billingService->getCachedFilePath($format, $bill->invoice_no);
+        
+        if (\Illuminate\Support\Facades\Storage::disk('r2')->exists($r2Path)) {
+            return redirect()->away(\Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15)));
+        }
+
+        $items = $billingService->getBillDetails((string) $bill->invoice_no);
+
+        if (empty($items)) {
+            return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);
+        }
+
+        $customerName = $bill->customer->user->name ?? 'Customer';
+        
+        $billNoStr = $items[0]['BILLNO'] ?? (string) $bill->invoice_no;
+        $billDate = $items[0]['BILLDATE'] ?? ($bill->bill_date ? $bill->bill_date->format('Y-m-d') : now()->format('Y-m-d'));
+
+        $safeBillNo = $this->safeBillNo($billNoStr);
+
+        switch ($format) {
+            case 'pdf':
+                $localPath = $billingService->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $filename  = "bill_{$safeBillNo}.pdf";
+                $mime      = 'application/pdf';
+                break;
+
+            case 'csv':
+                $localPath = $billingService->generateCsv($items, $bill->invoice_no, $billDate);
+                $filename  = "bill_{$safeBillNo}.csv";
+                $mime      = 'text/csv';
+                break;
+
+            default: // excel
+                $localPath = $billingService->generateExcel($items, $billNoStr, $billDate);
+                $filename  = "bill_{$safeBillNo}.xlsx";
+                $mime      = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                break;
+        }
+
+        // Upload the locally-generated file to R2, then return a signed URL.
+        // We cache it under the same r2Path so repeated downloads skip regeneration.
+        try {
+            $fileContents = file_get_contents($localPath);
+            Storage::disk('r2')->put($r2Path, $fileContents, [
+                'ContentType' => $mime,
+            ]);
+            @unlink($localPath); // clean up local temp file
+
+            $url = Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return redirect()->away($url);
+        } catch (\Exception $e) {
+            // R2 unavailable — stream directly from local temp file as a fallback
+            \Illuminate\Support\Facades\Log::warning('R2 upload failed, streaming local file', [
+                'bill'  => $bill->invoice_no,
+                'error' => $e->getMessage(),
+            ]);
+
+            if (file_exists($localPath)) {
+                return response()->download($localPath, $filename, ['Content-Type' => $mime])
+                    ->deleteFileAfterSend(true);
+            }
+
+            return response()->json(['message' => 'File generation failed. Error: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function submitPayment(Request $request, $id)
+    {
+        $customerId = $this->getCustomerId($request);
+
+        $bill = Bill::where('customer_id', $customerId)->findOrFail($id);
+
+        if ($bill->payment_status === 'paid' || $bill->payment_status === 'payment_submitted') {
+            return response()->json(['message' => 'Payment already submitted or paid.'], 400);
+        }
+
+        $validated = $request->validate([
+            'payment_method' => ['required', Rule::in(['gpay', 'neft'])],
+            'utr_number' => 'required|string',
+            'amount_paid' => 'required|numeric|min:0',
+            'payment_date' => 'required|date',
+            'screenshot' => 'required|file|mimes:jpeg,png,jpg,pdf|max:5120',
+        ]);
+
+        // Upload proof directly to R2 — no local storage
+        $ext    = $request->file('screenshot')->getClientOriginalExtension();
+        $r2Key  = 'proofs/' . $bill->invoice_no . '_' . time() . '.' . $ext;
+        Storage::disk('r2')->put(
+            $r2Key,
+            file_get_contents($request->file('screenshot')->getRealPath()),
+            ['ContentType' => $request->file('screenshot')->getMimeType()]
+        );
+        $path = $r2Key; // store the R2 key; admin view generates a signed URL from this
+
+        $bill->update([
+            'payment_method'        => $validated['payment_method'],
+            'utr_number'            => $validated['utr_number'],
+            'proof_screenshot'      => $path,
+            'payment_status'        => 'payment_submitted',
+            'payment_submitted_at'  => Carbon::now(),   // actual submission time, not the typed date
+        ]);
+
+        return response()->json(['message' => 'Payment proof submitted successfully', 'bill' => $bill]);
+    }
+}
+
+EOF
+
+echo "Clearing cache..."
+php artisan config:clear
+php artisan cache:clear
+php artisan route:clear
+
+echo "Done! The fixes are now deployed. You can test the download button now."

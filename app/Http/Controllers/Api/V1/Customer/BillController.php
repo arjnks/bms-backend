@@ -37,6 +37,75 @@ class BillController extends Controller
         return preg_replace('/[^A-Za-z0-9._-]+/', '_', $billNo) ?: 'bill';
     }
 
+    private function erpBillNoCandidates(Bill $bill): array
+    {
+        $candidates = [
+            (string) $bill->invoice_no,
+            (string) $bill->id,
+        ];
+
+        preg_match('/(\d+)$/', (string) $bill->invoice_no, $matches);
+        if (!empty($matches[1])) {
+            $candidates[] = $matches[1];
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
+    }
+
+    private function erpItemsBelongToCustomer(array $items, Bill $bill): bool
+    {
+        if (empty($items)) {
+            return false;
+        }
+
+        $itemCustomerCode = $items[0]['cucode'] ?? $items[0]['CUCODE'] ?? null;
+        if (!$itemCustomerCode) {
+            return true;
+        }
+
+        $expectedCodes = array_filter([
+            $bill->customer?->external_cucode,
+            $bill->customer?->customer_code,
+        ]);
+
+        return in_array((string) $itemCustomerCode, array_map('strval', $expectedCodes), true);
+    }
+
+    private function fetchErpLineItems(Bill $bill, ExternalBillingService $billingService): array
+    {
+        foreach ($this->erpBillNoCandidates($bill) as $candidate) {
+            $items = $billingService->getBillDetails($candidate);
+
+            if ($this->erpItemsBelongToCustomer($items, $bill)) {
+                return $items;
+            }
+        }
+
+        return [];
+    }
+
+    private function cacheLineItems(Bill $bill, array $items): void
+    {
+        foreach ($items as $item) {
+            try {
+                $bill->lineItems()->create([
+                    'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
+                    'hsn_code'     => $item['HSNCODE'] ?? null,
+                    'qty'          => $item['QUANTITY'] ?? 1,
+                    'unit'         => $item['UNIT'] ?? $item['PACKING'] ?? 'NOS',
+                    'rate'         => $item['SRATE'] ?? 0,
+                    'gst_pct'      => $item['GSTRATE'] ?? 0,
+                    'line_total'   => $item['TOTALAMOUNT'] ?? 0,
+                ]);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to cache ERP line item', [
+                    'bill_id' => $bill->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
     private function getCustomerId(Request $request)
     {
         // Get the customer ID associated with the currently authenticated user
@@ -79,28 +148,18 @@ class BillController extends Controller
 
         $lineItems = collect();
         try {
-            if ($bill->lineItems()->count() === 0 && $bill->customer->external_cucode) {
-                // Fetch from ERP on the fly
+            if ($bill->lineItems()->count() === 0) {
                 $billingService = app(\App\Services\ExternalBillingService::class);
-                $items = $billingService->getBillDetails((string) $bill->invoice_no);
+                $items = $this->fetchErpLineItems($bill->loadMissing('customer'), $billingService);
                 
                 if (!empty($items)) {
-                    foreach ($items as $item) {
-                        try {
-                            $bill->lineItems()->create([
-                                'product_name' => $item['ITEMNAME'] ?? 'Unknown Item',
-                                'hsn_code'     => $item['HSNCODE'] ?? null,
-                                'qty'          => $item['QUANTITY'] ?? 1,
-                                'unit'         => $item['UNIT'] ?? 'NOS',
-                                'rate'         => $item['SRATE'] ?? 0,
-                                'gst_pct'      => $item['GSTRATE'] ?? 0,
-                                'line_total'   => $item['TOTALAMOUNT'] ?? 0,
-                            ]);
-                        } catch (\Exception $e) {}
-                    }
+                    $lineItems = collect($items);
+                    $this->cacheLineItems($bill, $items);
                 }
             }
-            $lineItems = $bill->lineItems()->get();
+            if ($lineItems->isEmpty()) {
+                $lineItems = $bill->lineItems()->get();
+            }
         } catch (\Illuminate\Database\QueryException $e) {
             \Illuminate\Support\Facades\Log::warning('bill_line_items table missing on customer show', ['error' => $e->getMessage()]);
         }
@@ -176,7 +235,7 @@ class BillController extends Controller
             return redirect()->away(\Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15)));
         }
 
-        $items = $billingService->getBillDetails((string) $bill->invoice_no);
+        $items = $this->fetchErpLineItems($bill, $billingService);
 
         if (empty($items)) {
             return response()->json(['message' => 'No file associated and ERP fetch failed.'], 404);
@@ -255,6 +314,15 @@ class BillController extends Controller
             'payment_status'        => 'payment_submitted',
             'payment_submitted_at'  => Carbon::now(),   // actual submission time, not the typed date
         ]);
+
+        $bill->load('customer.user');
+        if ($bill->customer && $bill->customer->user && $bill->customer->user->phone) {
+            app(\App\Services\WhatsAppService::class)->sendTemplate($bill->customer->user->phone, 'payment_received_v1', [
+                $bill->customer->user->name,
+                $bill->invoice_no,
+                $validated['utr_number']
+            ]);
+        }
 
         return response()->json(['message' => 'Payment proof submitted successfully', 'bill' => $bill]);
     }

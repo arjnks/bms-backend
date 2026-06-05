@@ -78,6 +78,58 @@ class WhatsAppService
         }
     }
 
+    public function sendTemplate(string $phone, string $templateName, array $variables = [], string $language = 'en_US'): bool
+    {
+        if (!$this->configured) {
+            Log::warning("WhatsApp not configured — skipping template {$templateName} to {$phone}.");
+            // Optionally, fallback to standard send() with simulated text if we wanted, 
+            // but we'll respect the true template structure for now.
+            return false;
+        }
+
+        $normalized = $this->normalizePhone($phone);
+        
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to'                => $normalized,
+            'type'              => 'template',
+            'template'          => [
+                'name'     => $templateName,
+                'language' => ['code' => $language],
+            ],
+        ];
+
+        if (!empty($variables)) {
+            $parameters = array_map(function ($value) {
+                return ['type' => 'text', 'text' => (string) $value];
+            }, $variables);
+
+            $payload['template']['components'] = [
+                [
+                    'type'       => 'body',
+                    'parameters' => $parameters
+                ]
+            ];
+        }
+
+        try {
+            $response = Http::withToken($this->accessToken)
+                ->post("{$this->apiUrl}/{$this->phoneId}/messages", $payload);
+
+            if ($response->successful()) {
+                Log::info("WhatsApp Template '{$templateName}' sent to {$normalized}");
+                return true;
+            }
+
+            Log::error("WhatsApp Template failed to {$normalized}: " . $response->body());
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error("WhatsApp Template exception for {$normalized}: " . $e->getMessage());
+            return false;
+        }
+    }
+
     /**
      * Check if WhatsApp is properly configured.
      */

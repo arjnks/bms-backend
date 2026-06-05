@@ -152,17 +152,35 @@ class ExternalBillController extends Controller
 
         switch ($format) {
             case 'pdf':
-                $path     = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $localPath = $this->billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $mime = 'application/pdf';
                 break;
             case 'csv':
-                $path     = $this->billing->generateCsv($items, $billNoStr, $billDate);
+                $localPath = $this->billing->generateCsv($items, $billNoStr, $billDate);
+                $mime = 'text/csv';
                 break;
             default:
-                $path     = $this->billing->generateExcel($items, $billNoStr, $billDate);
+                $localPath = $this->billing->generateExcel($items, $billNoStr, $billDate);
+                $mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
                 break;
         }
 
-        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
-        return redirect()->away($url);
+        // Upload local file to R2
+        try {
+            $fileContents = file_get_contents($localPath);
+            \Illuminate\Support\Facades\Storage::disk('r2')->put($r2Path, $fileContents, [
+                'ContentType' => $mime,
+            ]);
+            @unlink($localPath);
+
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return redirect()->away($url);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('R2 upload failed in ExternalBillController', ['error' => $e->getMessage()]);
+            if (file_exists($localPath)) {
+                return response()->download($localPath, basename($r2Path), ['Content-Type' => $mime])->deleteFileAfterSend(true);
+            }
+            abort(500, 'File generation failed.');
+        }
     }
 }

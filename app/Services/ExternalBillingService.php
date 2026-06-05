@@ -112,10 +112,11 @@ class ExternalBillingService
 
     public function getBillDetails(string $billNo): array
     {
+        \Illuminate\Support\Facades\Log::info("getBillDetails called for: " . $billNo);
         // The ERP API throws an SQL error if we pass the full string (e.g. LPH/2627/96609)
-        // It expects only the numeric ID. We use \D*$ to ignore trailing spaces or letters.
-        preg_match('/(\d+)\D*$/', $billNo, $matches);
-        $numericId = $matches[1] ?? trim($billNo);
+        // It expects only the numeric ID.
+        preg_match('/(\d+)$/', $billNo, $matches);
+        $numericId = $matches[1] ?? $billNo;
 
         try {
             $url = "{$this->baseUrl}/API/announcements/bill_details.php";

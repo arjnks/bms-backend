@@ -66,18 +66,15 @@ class ProcessRemindersCommand extends Command
                 $date = Carbon::parse($bill->due_date)->format('Y-m-d');
                 $link = env('APP_URL') . "/portal/bills/{$bill->id}/pay";
 
-                $message = "Hi {$bill->customer->user->name}, your payment of ₹{$amount} for {$bill->invoice_no} is due on {$date}. Pay here: {$link}";
-                
-                // If the rule has a custom message template, use it (replacing basic variables)
-                if ($rule->message_template) {
-                    $message = str_replace(
-                        ['[Name]', '[amount]', '[invoice_no]', '[due_date]', '[link]'],
-                        [$bill->customer->user->name, "₹{$amount}", $bill->invoice_no, $date, $link],
-                        $rule->message_template
-                    );
-                }
+                // Meta WhatsApp strictly requires templates for business-initiated notifications.
+                // We will map the variables for payment_reminder_v1
+                $variables = [
+                    $bill->customer->user->name,
+                    1, // This job is dispatched per bill
+                    $bill->invoice_no
+                ];
 
-                SendWhatsAppReminderJob::dispatch($phone, $message, $bill->customer_id, $bill->id, $rule->id);
+                SendWhatsAppReminderJob::dispatch($phone, 'payment_reminder_v1', $variables, $bill->customer_id, $bill->id, $rule->id);
                 $jobsDispatched++;
             }
         }

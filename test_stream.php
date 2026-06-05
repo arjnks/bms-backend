@@ -1,11 +1,19 @@
 <?php
-$customer = \App\Models\User::where("role", "customer")->first();
-$token = $customer->createToken("test")->plainTextToken;
+require "vendor/autoload.php";
+$app = require_once "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-$res1 = \Illuminate\Support\Facades\Http::withToken($token)->get("http://127.0.0.1:8003/api/v1/customer/external-bills/LPH_2627_109319/download-url?format=excel");
-$url = json_decode($res1->body(), true)["download_url"];
+$service = app(\App\Services\ExternalBillingService::class);
+$bill = \App\Models\Bill::where("invoice_no", "like", "%100053%")->with("customer.user")->first();
+if (!$bill) die("Bill not found in local DB\n");
 
-$res2 = \Illuminate\Support\Facades\Http::withToken($token)->get("http://127.0.0.1:8003" . $url);
-echo "Status: " . $res2->status() . "\n";
-echo "Response: " . substr($res2->body(), 0, 500) . "\n";
+$items = $service->getBillDetails($bill->invoice_no);
+if (empty($items)) die("Items empty\n");
+
+$customerName = $bill->customer->user->name ?? "Customer";
+$billNoStr = $items[0]["BILLNO"] ?? (string) $bill->invoice_no;
+$billDate = "2026-05-26";
+
+$pdfPath = $service->generatePdf($items, $billNoStr, $billDate, $customerName);
+echo "PDF generated successfully at: " . $pdfPath . "\n";
 

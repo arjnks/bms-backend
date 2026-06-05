@@ -367,7 +367,16 @@ class BillController extends Controller
 
             $bill->update(['bill_file_url' => $r2Key]);
 
-            return response()->json($bill->load('customer.user'), 201);
+            $bill->load('customer.user');
+            if ($bill->customer && $bill->customer->user && $bill->customer->user->phone) {
+                app(\App\Services\WhatsAppService::class)->sendTemplate($bill->customer->user->phone, 'new_bill_uploaded_v1', [
+                    $bill->customer->user->name,
+                    $bill->invoice_no,
+                    $bill->grand_total
+                ]);
+            }
+
+            return response()->json($bill, 201);
         });
     }
 
@@ -414,8 +423,10 @@ class BillController extends Controller
         ]);
 
         if ($bill->customer->user->phone) {
-            $msg = "Hi {$bill->customer->user->name}, your payment of ₹{$bill->grand_total} for {$bill->invoice_no} has been confirmed. Thank you! — Leo Group";
-            $this->whatsapp->send($bill->customer->user->phone, $msg);
+            $this->whatsapp->sendTemplate($bill->customer->user->phone, 'payment_verified_v1', [
+                $bill->customer->user->name,
+                $bill->invoice_no
+            ]);
         }
 
         return response()->json(['message' => 'Payment verified successfully', 'bill' => $bill]);
@@ -435,8 +446,11 @@ class BillController extends Controller
         ]);
 
         if ($bill->customer->user->phone) {
-            $msg = "Hi {$bill->customer->user->name}, your proof for {$bill->invoice_no} could not be verified. Reason: {$request->rejection_reason}. Please resubmit: " . url('/portal');
-            $this->whatsapp->send($bill->customer->user->phone, $msg);
+            $this->whatsapp->sendTemplate($bill->customer->user->phone, 'payment_rejected_v1', [
+                $bill->customer->user->name,
+                $bill->invoice_no,
+                $request->rejection_reason
+            ]);
         }
 
         return response()->json(['message' => 'Payment proof rejected', 'bill' => $bill]);

@@ -10,6 +10,7 @@
         "ext-gd": "*",
         "ext-zip": "*",
         "barryvdh/laravel-dompdf": "^3.1",
+        "doctrine/dbal": "*",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",

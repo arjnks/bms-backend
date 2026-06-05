@@ -13,15 +13,17 @@ class SendWhatsAppReminderJob implements ShouldQueue
     use Queueable;
 
     protected $phone;
-    protected $message;
+    protected $templateName;
+    protected $variables;
     protected $customerId;
     protected $billId;
     protected $ruleId;
 
-    public function __construct(string $phone, string $message, int $customerId, int $billId, ?int $ruleId = null)
+    public function __construct(string $phone, string $templateName, array $variables, int $customerId, int $billId, ?int $ruleId = null)
     {
         $this->phone = $phone;
-        $this->message = $message;
+        $this->templateName = $templateName;
+        $this->variables = $variables;
         $this->customerId = $customerId;
         $this->billId = $billId;
         $this->ruleId = $ruleId;
@@ -30,8 +32,8 @@ class SendWhatsAppReminderJob implements ShouldQueue
     public function handle(WhatsAppService $whatsapp): void
     {
         // NOTE: In production with pre-approved templates, WhatsAppService should hit a template endpoint
-        // instead of the free-form text endpoint. Since this is phase 2, we simulate via text endpoint.
-        $success = $whatsapp->send($this->phone, $this->message);
+        // instead of the free-form text endpoint.
+        $success = $whatsapp->sendTemplate($this->phone, $this->templateName, $this->variables);
 
         ReminderLog::create([
             'customer_id' => $this->customerId,

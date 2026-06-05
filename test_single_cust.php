@@ -1,7 +1,7 @@
 <?php
 $res = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders([
     "ngrok-skip-browser-warning" => "true"
-])->asMultipart()->post("https://unknowing-relight-civic.ngrok-free.dev/API/announcements/bill_master.php", [
+])->asMultipart()->post("https://billing.leopharma.tech/API/announcements/bill_master.php", [
     ["name" => "from_date", "contents" => "2024-01-01"],
     ["name" => "to_date", "contents" => "2024-05-30"],
     ["name" => "cucode", "contents" => "010311"]

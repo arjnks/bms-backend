@@ -201,8 +201,13 @@ class CustomerController extends Controller
         $total = $overdueBills->sum('grand_total');
 
         if ($customer->user->phone) {
-            $msg = "Hi {$customer->user->name}, your payment of ₹{$total} is overdue. Please log in to your Leo Group portal to view and pay your bills.";
-            $this->whatsapp->send($customer->user->phone, $msg);
+            $invoiceList = $overdueBills->pluck('invoice_no')->implode(', ');
+            
+            $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
+                $customer->user->name,
+                $overdueBills->count(),
+                $invoiceList
+            ]);
 
             ReminderLog::create([
                 'customer_id' => $customer->id,
@@ -233,9 +238,13 @@ class CustomerController extends Controller
             }
 
             $total = $overdueBills->sum('grand_total');
-            $msg = "Hi {$customer->user->name}, you have an outstanding balance of ₹{$total}. Please log in to your Leo Group portal to view and pay your bills.";
-
-            $this->whatsapp->send($customer->user->phone, $msg);
+            $invoiceList = $overdueBills->pluck('invoice_no')->implode(', ');
+            
+            $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
+                $customer->user->name,
+                $overdueBills->count(),
+                $invoiceList
+            ]);
 
             ReminderLog::create([
                 'customer_id' => $customer->id,
@@ -338,17 +347,33 @@ class CustomerController extends Controller
 
         switch ($format) {
             case 'pdf':
-                $path = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $localPath = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
+                $mime = 'application/pdf';
                 break;
             case 'csv':
-                $path = $billing->generateCsv($items, $billNoStr, $billDate);
+                $localPath = $billing->generateCsv($items, $billNoStr, $billDate);
+                $mime = 'text/csv';
                 break;
             default: // excel
-                $path = $billing->generateExcel($items, $billNoStr, $billDate);
+                $localPath = $billing->generateExcel($items, $billNoStr, $billDate);
+                $mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
                 break;
         }
 
-        $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($path, now()->addMinutes(15));
-        return response()->json(['download_url' => $url]);
+        try {
+            $fileContents = file_get_contents($localPath);
+            \Illuminate\Support\Facades\Storage::disk('r2')->put($r2Path, $fileContents, [
+                'ContentType' => $mime,
+            ]);
+            @unlink($localPath);
+
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            return response()->json(['download_url' => $url]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('R2 upload failed in Admin CustomerController', ['error' => $e->getMessage()]);
+            // For admin JSON response, return the local download URL so they don't get 500
+            // But this endpoint returns JSON so we just return error since it's an API
+            return response()->json(['message' => 'File generation failed.'], 500);
+        }
     }
 }

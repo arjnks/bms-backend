@@ -42,7 +42,7 @@ return [
     ],
 
     'external_billing' => [
-        'url' => env('EXTERNAL_BILLING_URL', 'https://unknowing-relight-civic.ngrok-free.dev'),
+        'url' => env('EXTERNAL_BILLING_URL', 'https://billing.leopharma.tech'),
     ],
 
 ];
