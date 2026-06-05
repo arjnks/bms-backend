@@ -76,7 +76,8 @@ class ProcessRemindersCommand extends Command
                 $variables = [
                     $bill->customer->user->name,
                     1, // This job is dispatched per bill
-                    $invoiceList
+                    $invoiceList,
+                    $link
                 ];
 
                 if ($this->option('dry-run')) {

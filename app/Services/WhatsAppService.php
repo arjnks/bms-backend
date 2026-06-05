@@ -151,7 +151,7 @@ class WhatsAppService
     {
         $templates = [
             'new_bill_uploaded_v1' => "*New Bill Uploaded* 📄\n\nHi {{1}},\nA new bill has been uploaded to your portal.\n\nInvoice No: {{2}}\nAmount: ₹{{3}}\n\nPlease log in to view and pay.",
-            'payment_reminder_v1' => "*Payment Reminder* ⚠️\n\nHi {{1}},\nYou have {{2}} outstanding bill(s) pending on your account.\n\n{{3}}\n\nPlease log in to the portal and clear them immediately to avoid service disruption.",
+            'payment_reminder_v1' => "*Payment Reminder* ⚠️\n\nHi {{1}},\nYou have {{2}} outstanding bill(s) pending on your account.\n\n{{3}}\n\nPlease log in to the portal and clear them immediately to avoid service disruption.\n\nPayment Link: {{4}}",
             'payment_received_v1' => "*Payment Received* ⏳\n\nHi {{1}},\nWe have received your payment proof.\n\nInvoice No: {{2}}\nUTR: {{3}}\n\nOur team will verify it shortly.",
             'payment_verified_v1' => "*Payment Verified* ✅\n\nHi {{1}},\nYour payment has been successfully VERIFIED.\n\nInvoice No: {{2}}\n\nThank you for your business!",
             'payment_rejected_v1' => "*Payment Rejected* ❌\n\nHi {{1}},\nYour payment proof could NOT be verified.\n\nInvoice No: {{2}}\nReason: {{3}}\n\nPlease upload a clear proof or contact us.",

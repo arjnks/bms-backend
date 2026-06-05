@@ -44,5 +44,7 @@ class SendWhatsAppReminderJob implements ShouldQueue
             'sent_at' => $success ? Carbon::now() : null,
             'error_msg' => $success ? null : 'WhatsApp API failed',
         ]);
+
+        sleep(5);
     }
 }

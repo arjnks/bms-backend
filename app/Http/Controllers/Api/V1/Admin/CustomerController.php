@@ -208,10 +208,12 @@ class CustomerController extends Controller
             $invoiceList .= "----------------------------\n";
             $invoiceList .= "Total Due      " . str_pad(number_format($total, 2), 13, ' ', STR_PAD_LEFT);
             
+            $link = env('EXTERNAL_BILLING_URL', env('APP_URL') . '/portal');
             $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
                 $customer->user->name,
                 $overdueBills->count(),
-                $invoiceList
+                $invoiceList,
+                $link
             ]);
 
             ReminderLog::create([
@@ -250,10 +252,12 @@ class CustomerController extends Controller
             $invoiceList .= "----------------------------\n";
             $invoiceList .= "Total Due      " . str_pad(number_format($total, 2), 13, ' ', STR_PAD_LEFT);
             
+            $link = env('EXTERNAL_BILLING_URL', env('APP_URL') . '/portal');
             $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
                 $customer->user->name,
                 $overdueBills->count(),
-                $invoiceList
+                $invoiceList,
+                $link
             ]);
 
             ReminderLog::create([
