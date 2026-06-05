@@ -201,7 +201,12 @@ class CustomerController extends Controller
         $total = $overdueBills->sum('grand_total');
 
         if ($customer->user->phone) {
-            $invoiceList = $overdueBills->pluck('invoice_no')->implode(', ');
+            $invoiceList = "Invoice No.     Amount (₹)\n----------------------------\n";
+            foreach ($overdueBills as $b) {
+                $invoiceList .= str_pad($b->invoice_no, 15) . str_pad(number_format($b->grand_total, 2), 13, ' ', STR_PAD_LEFT) . "\n";
+            }
+            $invoiceList .= "----------------------------\n";
+            $invoiceList .= "Total Due      " . str_pad(number_format($total, 2), 13, ' ', STR_PAD_LEFT);
             
             $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
                 $customer->user->name,
@@ -238,7 +243,12 @@ class CustomerController extends Controller
             }
 
             $total = $overdueBills->sum('grand_total');
-            $invoiceList = $overdueBills->pluck('invoice_no')->implode(', ');
+            $invoiceList = "Invoice No.     Amount (₹)\n----------------------------\n";
+            foreach ($overdueBills as $b) {
+                $invoiceList .= str_pad($b->invoice_no, 15) . str_pad(number_format($b->grand_total, 2), 13, ' ', STR_PAD_LEFT) . "\n";
+            }
+            $invoiceList .= "----------------------------\n";
+            $invoiceList .= "Total Due      " . str_pad(number_format($total, 2), 13, ' ', STR_PAD_LEFT);
             
             $this->whatsapp->sendTemplate($customer->user->phone, 'payment_reminder_v1', [
                 $customer->user->name,

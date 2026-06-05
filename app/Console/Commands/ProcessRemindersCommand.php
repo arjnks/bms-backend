@@ -66,12 +66,17 @@ class ProcessRemindersCommand extends Command
                 $date = Carbon::parse($bill->due_date)->format('Y-m-d');
                 $link = env('APP_URL') . "/portal/bills/{$bill->id}/pay";
 
+                $invoiceList = "Invoice No.     Amount (₹)\n----------------------------\n";
+                $invoiceList .= str_pad($bill->invoice_no, 15) . str_pad(number_format($bill->grand_total, 2), 13, ' ', STR_PAD_LEFT) . "\n";
+                $invoiceList .= "----------------------------\n";
+                $invoiceList .= "Total Due      " . str_pad(number_format($bill->grand_total, 2), 13, ' ', STR_PAD_LEFT);
+
                 // Meta WhatsApp strictly requires templates for business-initiated notifications.
                 // We will map the variables for payment_reminder_v1
                 $variables = [
                     $bill->customer->user->name,
                     1, // This job is dispatched per bill
-                    $bill->invoice_no
+                    $invoiceList
                 ];
 
                 SendWhatsAppReminderJob::dispatch($phone, 'payment_reminder_v1', $variables, $bill->customer_id, $bill->id, $rule->id);
