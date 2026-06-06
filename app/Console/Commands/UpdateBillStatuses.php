@@ -19,34 +19,24 @@ class UpdateBillStatuses extends Command
         $this->info("Updating bill statuses...");
         
         $now = now()->toDateString();
-        $threeDaysFromNow = now()->addDays(3)->toDateString();
         
-        // Find bills that are overdue (due date is in the past)
+        // Mark bills whose due date has passed as overdue
         $overdueCount = Bill::where('status', '!=', 'paid')
             ->where('is_settled', false)
             ->whereNotNull('due_date')
             ->whereDate('due_date', '<', $now)
             ->update(['status' => 'overdue']);
             
-        // Find bills that are nearing due date (within 3 days from today)
-        $dueSoonCount = Bill::where('status', '!=', 'paid')
-            ->where('is_settled', false)
-            ->whereNotNull('due_date')
-            ->whereDate('due_date', '>=', $now)
-            ->whereDate('due_date', '<=', $threeDaysFromNow)
-            ->update(['status' => 'due_soon']);
-            
-        // Update remaining unpaid bills (due date is more than 3 days away, or null)
+        // All remaining unpaid bills (due date today or in the future, or no due date)
         $unpaidCount = Bill::where('status', '!=', 'paid')
             ->where('is_settled', false)
-            ->where(function($q) use ($threeDaysFromNow) {
+            ->where(function($q) use ($now) {
                 $q->whereNull('due_date')
-                  ->orWhereDate('due_date', '>', $threeDaysFromNow);
+                  ->orWhereDate('due_date', '>=', $now);
             })
             ->update(['status' => 'unpaid']);
 
         $this->info("Updated {$overdueCount} bills to overdue.");
-        $this->info("Updated {$dueSoonCount} bills to due_soon.");
         $this->info("Updated {$unpaidCount} bills to unpaid.");
     }
 }
