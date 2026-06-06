@@ -38,15 +38,39 @@ class BillController extends Controller
         $now   = Carbon::now();
         $today = Carbon::today();
 
-        // --- KPI numbers ---
-        $total_outstanding = Bill::where('is_settled', false)
+        // --- Live ERP financial figures (source of truth) ---
+        $erpDashboard    = [];
+        $erpOutstanding  = null;
+        $erpOverdue      = null;
+        $erpBillCount    = null;
+
+        try {
+            $erpResponse = \Illuminate\Support\Facades\Http::timeout(10)
+                ->withOptions([
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_SSL_VERIFYPEER => 0,
+                ])
+                ->get(rtrim(env('EXTERNAL_BILLING_URL', 'https://billing.leopharma.tech'), '/') . '/API/announcements/dashboard_data.php');
+
+            if ($erpResponse->successful()) {
+                $erpData        = $erpResponse->json('data', []);
+                $erpOutstanding = $erpData['total_outstandings'] ?? null;
+                $erpOverdue     = $erpData['total_overdue']      ?? null;
+                $erpBillCount   = $erpData['current_bill_count'] ?? null;
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('ERP dashboard_data.php fetch failed, falling back to local DB', ['error' => $e->getMessage()]);
+        }
+
+        // --- KPI numbers (fallback to local DB if ERP is unreachable) ---
+        $total_outstanding = $erpOutstanding ?? Bill::where('is_settled', false)
             ->sum(DB::raw('grand_total - IFNULL(amount_received, 0)'));
 
-        $overdue_amount = Bill::where('due_date', '<', $today)
+        $overdue_amount = $erpOverdue ?? Bill::where('due_date', '<', $today)
             ->where('is_settled', false)
             ->sum(DB::raw('grand_total - IFNULL(amount_received, 0)'));
 
-        $bills_today   = Bill::whereDate('bill_date', $today)->count();
+        $bills_today   = $erpBillCount ?? Bill::whereDate('bill_date', $today)->count();
         $overdue_count = Bill::where('due_date', '<', $today)->where('is_settled', false)->count();
 
         $total_bills     = Bill::count();
@@ -112,11 +136,11 @@ class BillController extends Controller
         $unpaid_count = Bill::whereIn('payment_status', ['unpaid', 'proof_rejected'])
             ->where('is_settled', false)->count();
         $chart_payment_status = [
-            'paid'    => $paid_bills,
-            'due_soon'=> Bill::where('is_settled', false)
+            'paid'     => $paid_bills,
+            'due_soon' => Bill::where('is_settled', false)
                 ->whereBetween('due_date', [$today, $today->copy()->addDays(7)])
                 ->count(),
-            'overdue' => $overdue_count,
+            'overdue'  => $overdue_count,
         ];
 
         return response()->json([
@@ -133,6 +157,7 @@ class BillController extends Controller
             'top_overdue'           => $top_overdue,
             'chart_collections'     => $chart_collections,
             'chart_payment_status'  => $chart_payment_status,
+            'erp_live'              => $erpOutstanding !== null, // flag for frontend: true = ERP data, false = local fallback
         ]);
     }
 
