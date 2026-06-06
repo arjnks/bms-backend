@@ -110,7 +110,7 @@ class OverviewController extends Controller
                 return [
                     'id' => $b->id,
                     'invoice_no' => $b->invoice_no,
-                    'customer_name' => $b->customer->user->name ?? 'Unknown',
+                    'customer_name' => $b->customer?->user?->name ?? 'Unknown',
                     'customer_id' => $b->customer_id,
                     'payment_status' => $b->payment_status,
                     'grand_total' => $b->grand_total,
