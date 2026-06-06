@@ -45,18 +45,32 @@ class BillController extends Controller
         $erpBillCount    = null;
 
         try {
+            $erpUrl = rtrim(env('EXTERNAL_BILLING_URL', 'https://billing.leopharma.tech'), '/') . '/API/announcements/dashboard_data.php';
+            \Illuminate\Support\Facades\Log::info('ERP dashboard call starting', ['url' => $erpUrl]);
+
             $erpResponse = \Illuminate\Support\Facades\Http::timeout(10)
                 ->withOptions([
                     CURLOPT_SSL_VERIFYHOST => 0,
                     CURLOPT_SSL_VERIFYPEER => 0,
                 ])
-                ->get(rtrim(env('EXTERNAL_BILLING_URL', 'https://billing.leopharma.tech'), '/') . '/API/announcements/dashboard_data.php');
+                ->get($erpUrl);
+
+            \Illuminate\Support\Facades\Log::info('ERP dashboard response', [
+                'status'  => $erpResponse->status(),
+                'body'    => substr($erpResponse->body(), 0, 200),
+            ]);
 
             if ($erpResponse->successful()) {
                 $erpData        = $erpResponse->json('data', []);
                 $erpOutstanding = $erpData['total_outstandings'] ?? null;
                 $erpOverdue     = $erpData['total_overdue']      ?? null;
                 $erpBillCount   = $erpData['current_bill_count'] ?? null;
+
+                \Illuminate\Support\Facades\Log::info('ERP dashboard parsed', [
+                    'outstanding' => $erpOutstanding,
+                    'overdue'     => $erpOverdue,
+                    'bill_count'  => $erpBillCount,
+                ]);
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('ERP dashboard_data.php fetch failed, falling back to local DB', ['error' => $e->getMessage()]);
