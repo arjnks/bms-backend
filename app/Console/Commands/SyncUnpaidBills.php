@@ -115,7 +115,7 @@ class SyncUnpaidBills extends Command
     {
         DB::table('bills')->upsert(
             $data,
-            ['invoice_no'],      // unique key
+            ['customer_id', 'invoice_no'],  // composite unique key — invoice_no alone is NOT globally unique
             [                    // columns to update on duplicate
                 'bill_date', 'due_date', 'subtotal', 'grand_total',
                 'amount_received', 'is_settled', 'aging_days', 'lock_days',
