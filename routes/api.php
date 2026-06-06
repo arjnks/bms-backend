@@ -153,3 +153,5 @@ Route::prefix('v1')->group(function () {
 
 
 Route::get('/debug-url', function() { return response()->json(['config' => config('services.external_billing.url'), 'env' => env('EXTERNAL_BILLING_URL')]); });
+
+Route::get('/erp-test', [App\Http\Controllers\Api\V1\Admin\BillController::class, 'overview']);
