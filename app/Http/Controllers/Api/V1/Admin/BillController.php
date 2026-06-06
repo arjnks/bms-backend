@@ -44,6 +44,7 @@ class BillController extends Controller
         $erpOverdue      = null;
         $erpBillCount    = null;
 
+        $erpError = null;
         try {
             $erpUrl = rtrim(env('EXTERNAL_BILLING_URL', 'https://billing.leopharma.tech'), '/') . '/API/announcements/dashboard_data.php';
 
@@ -59,9 +60,11 @@ class BillController extends Controller
                 $erpOutstanding = $erpData['total_outstandings'] ?? null;
                 $erpOverdue     = $erpData['total_overdue']      ?? null;
                 $erpBillCount   = $erpData['current_bill_count'] ?? null;
+            } else {
+                $erpError = 'HTTP Status: ' . $erpResponse->status();
             }
         } catch (\Exception $e) {
-            // Silently fallback to local DB if ERP is unreachable or log is unwritable
+            $erpError = $e->getMessage();
         }
 
         // --- KPI numbers (fallback to local DB if ERP is unreachable) ---
@@ -160,6 +163,7 @@ class BillController extends Controller
             'chart_collections'     => $chart_collections,
             'chart_payment_status'  => $chart_payment_status,
             'erp_live'              => $erpOutstanding !== null, // flag for frontend: true = ERP data, false = local fallback
+            'erp_error'             => $erpError,
         ]);
     }
 
