@@ -29,7 +29,9 @@ class SyncUnpaidBills extends Command
 
         foreach ($customers as $cucode => $customerId) {
             try {
-                $bills = $billingService->getBills((string) $cucode);
+                $fromDate = \Carbon\Carbon::today()->subYears(10)->format('Y-m-d');
+                $toDate   = \Carbon\Carbon::today()->format('Y-m-d');
+                $bills = $billingService->getBills((string) $cucode, $fromDate, $toDate);
             } catch (\Exception $e) {
                 $this->warn("Failed to fetch bills for cucode {$cucode}: " . $e->getMessage());
                 continue;
