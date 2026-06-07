@@ -54,8 +54,16 @@ class OverviewController extends Controller
             // Total customers
             $totalCustomers = \App\Models\User::where('role', 'customer')->count();
 
+            // Overdue amount (fallback to local DB)
+            $overdueAmount = $erpOverdue ?? Bill::where('is_settled', false)
+                ->where(function ($q) {
+                    $q->whereColumn('aging_days', '>', 'lock_days')
+                      ->orWhere('payment_status', 'overdue');
+                })
+                ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - IFNULL(amount_received, 0)'));
+
             // Overdue count
-            $overdueCount = $erpOverdue ?? Bill::where('is_settled', false)
+            $overdueCount = Bill::where('is_settled', false)
                 ->where(function ($q) {
                     $q->whereColumn('aging_days', '>', 'lock_days')
                       ->orWhere('payment_status', 'overdue');
@@ -143,6 +151,7 @@ class OverviewController extends Controller
                 'dues_this_month'      => (float) $totalOutstanding, // UI uses this first
                 'bills_today'          => $billsToday,
                 'overdue_count'        => $overdueCount,
+                'overdue_amount'       => (float) $overdueAmount,
                 'total_unpaid'         => $totalUnpaid,
                 'total_bills'          => $totalBills,
                 'collection_rate'      => $collectionRate,
