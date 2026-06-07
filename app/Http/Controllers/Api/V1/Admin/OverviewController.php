@@ -95,19 +95,18 @@ class OverviewController extends Controller
                 ['name' => 'Overdue',  'value' => $overdueCount, 'color' => '#c0392b'],
             ];
 
-            // Chart: Collections (last 6 months)
-            $chartCollections = [];
-            for ($i = 5; $i >= 0; $i--) {
-                $monthStart = Carbon::now()->subMonths($i)->startOfMonth();
-                $monthEnd   = Carbon::now()->subMonths($i)->endOfMonth();
-                $collected  = Bill::where('payment_status', 'paid')
-                    ->whereBetween('payment_verified_at', [$monthStart, $monthEnd])
-                    ->sum('grand_total');
-                $chartCollections[] = [
-                    'month'  => $monthStart->format('M'),
+            // Chart: Collections (last 12 months)
+            $now = Carbon::now();
+            $chartCollections = collect(range(11, 0))->map(function ($i) use ($now) {
+                $month = $now->copy()->subMonths($i);
+                $collected = Bill::whereYear('bill_date', $month->year)
+                    ->whereMonth('bill_date', $month->month)
+                    ->sum('amount_received');
+                return [
+                    'month'  => $month->format('M'),
                     'amount' => (float) $collected,
                 ];
-            }
+            })->values()->toArray();
 
             // Recent bills logic for the dashboard to match the UI expectation
             $recentBills = Bill::where('is_settled', false)
