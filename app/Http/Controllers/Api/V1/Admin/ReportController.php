@@ -49,33 +49,28 @@ class ReportController extends Controller
 
     public function collections(Request $request)
     {
-        $startDate = Carbon::now()->subMonths(11)->startOfMonth();
-
-        $bills = Bill::where('payment_status', 'paid')
-            ->whereNotNull('payment_verified_at')
-            ->where('payment_verified_at', '>=', $startDate)
-            ->get(['payment_verified_at', 'grand_total']);
-
+        $now = Carbon::now();
         $collections = [];
         
-        // Pre-fill array to guarantee exactly 12 months in chronological order
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->format('Y-m');
-            $collections[$month] = [
-                'month' => $month,
-                'total_collected' => 0,
-                'bill_count' => 0
+            $month = $now->copy()->subMonths($i);
+            
+            $collected = Bill::whereYear('bill_date', $month->year)
+                ->whereMonth('bill_date', $month->month)
+                ->sum('amount_received');
+                
+            $billCount = Bill::whereYear('bill_date', $month->year)
+                ->whereMonth('bill_date', $month->month)
+                ->where('amount_received', '>', 0)
+                ->count();
+
+            $collections[] = [
+                'month' => $month->format('Y-m'),
+                'total_collected' => (float) $collected,
+                'bill_count' => $billCount
             ];
         }
 
-        foreach ($bills as $bill) {
-            $month = Carbon::parse($bill->payment_verified_at)->format('Y-m');
-            if (isset($collections[$month])) {
-                $collections[$month]['total_collected'] += (float) $bill->grand_total;
-                $collections[$month]['bill_count']++;
-            }
-        }
-
-        return response()->json(array_values($collections));
+        return response()->json($collections);
     }
 }
