@@ -361,32 +361,21 @@ class CustomerController extends Controller
 
         switch ($format) {
             case 'pdf':
-                $localPath = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
-                $mime = 'application/pdf';
+                $r2PathReturned = $billing->generatePdf($items, $billNoStr, $billDate, $customerName);
                 break;
             case 'csv':
-                $localPath = $billing->generateCsv($items, $billNoStr, $billDate);
-                $mime = 'text/csv';
+                $r2PathReturned = $billing->generateCsv($items, $billNoStr, $billDate);
                 break;
             default: // excel
-                $localPath = $billing->generateExcel($items, $billNoStr, $billDate);
-                $mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                $r2PathReturned = $billing->generateExcel($items, $billNoStr, $billDate);
                 break;
         }
 
         try {
-            $fileContents = file_get_contents($localPath);
-            \Illuminate\Support\Facades\Storage::disk('r2')->put($r2Path, $fileContents, [
-                'ContentType' => $mime,
-            ]);
-            @unlink($localPath);
-
-            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2Path, now()->addMinutes(15));
+            $url = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($r2PathReturned, now()->addMinutes(15));
             return response()->json(['download_url' => $url]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('R2 upload failed in Admin CustomerController', ['error' => $e->getMessage()]);
-            // For admin JSON response, return the local download URL so they don't get 500
-            // But this endpoint returns JSON so we just return error since it's an API
+            \Illuminate\Support\Facades\Log::error('R2 URL generation failed in Admin CustomerController', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'File generation failed.'], 500);
         }
     }
