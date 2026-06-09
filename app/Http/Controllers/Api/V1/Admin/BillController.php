@@ -217,6 +217,15 @@ class BillController extends Controller
         $bills = $query->paginate(15);
 
         $bills->getCollection()->transform(function ($bill) {
+            $proofUrl = null;
+            if ($bill->proof_screenshot) {
+                try {
+                    $proofUrl = \Illuminate\Support\Facades\Storage::disk('r2')->temporaryUrl($bill->proof_screenshot, now()->addMinutes(60));
+                } catch (\Exception $e) {
+                    $proofUrl = $bill->proof_screenshot;
+                }
+            }
+
             return [
                 'id'                    => $bill->id,
                 'customer_name'         => $bill->customer?->user?->name ?? '—',
@@ -231,6 +240,7 @@ class BillController extends Controller
                 'payment_method'        => $bill->payment_method,
                 'utr_number'            => $bill->utr_number,
                 'proof_screenshot'      => $bill->proof_screenshot,
+                'proof_url'             => $proofUrl,
                 'payment_submitted_at'  => $bill->payment_submitted_at,
                 'payment_verified_at'   => $bill->payment_verified_at,
                 'rejection_reason'      => $bill->rejection_reason,
@@ -484,6 +494,9 @@ class BillController extends Controller
             ]);
         }
 
+        return response()->json(['message' => 'Payment proof rejected', 'bill' => $bill]);
+    }
+}
         return response()->json(['message' => 'Payment proof rejected', 'bill' => $bill]);
     }
 }
