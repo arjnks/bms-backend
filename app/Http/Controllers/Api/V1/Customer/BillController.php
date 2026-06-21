@@ -118,19 +118,161 @@ class BillController extends Controller
 
     public function index(Request $request)
     {
-        $customerId = $this->getCustomerId($request);
-
-        $billsQuery = Bill::where('customer_id', $customerId);
-        
-        $outstanding_amount = (clone $billsQuery)
-            ->where('is_settled', false)
-            ->sum(\Illuminate\Support\Facades\DB::raw('grand_total - amount_received'));
-
-        $bills = $billsQuery->orderBy('due_date', 'asc')->get()->map(function ($bill) {
-            return array_merge($bill->toArray(), [
-                'bill_date' => $bill->bill_date?->format('d M Y'),
-                'due_date'  => $bill->due_date?->format('d M Y'),
+        $customer = $request->user()->customer;
+        if (!$customer || empty($customer->external_cucode)) {
+            return response()->json([
+                'has_outstanding'    => false,
+                'outstanding_amount' => 0,
+                'bills'              => [],
             ]);
+        }
+
+        $baseUrl = rtrim(config('services.external_billing.url'), '/');
+        $fromDate = now()->subYears(10)->format('Y-m-d');
+        $toDate = now()->format('Y-m-d');
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(15)
+                ->withHeaders(['ngrok-skip-browser-warning' => 'true'])
+                ->asMultipart()
+                ->post("{$baseUrl}/API/announcements/bill_master.php", [
+                    'cucode' => $customer->external_cucode,
+                    'from_date' => $fromDate,
+                    'to_date' => $toDate,
+                ]);
+
+            if (!$response->successful()) {
+                throw new \Exception('ERP API HTTP ' . $response->status());
+            }
+            
+            $data = $response->json();
+            $erpBills = $data['data'] ?? [];
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("ERP Fetch failed in portal", ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to fetch live data from ERP.'], 500);
+        }
+
+        // Fetch local overlay data (bills where they submitted payment)
+        $localBills = Bill::where('customer_id', $customer->id)
+            ->whereIn('payment_status', ['payment_submitted', 'paid', 'proof_rejected'])
+            ->get()
+            ->keyBy('invoice_no');
+
+        // Fetch real lockdays from the local cache of ERP statuses
+        $invoiceNos = array_column($erpBills, 'BILLNO') ?: array_column($erpBills, 'BN');
+        $erpStatuses = \App\Models\ErpBillStatus::whereIn('billno', $invoiceNos)->get()->keyBy('billno');
+
+        $bills = [];
+        $outstanding_amount = 0;
+
+        foreach ($erpBills as $bill) {
+            $invoiceNo = $bill['BILLNO'] ?? $bill['BN'] ?? null;
+            if (!$invoiceNo) continue;
+
+            $netAmount  = (float) ($bill['NETAMOUNT'] ?? 0);
+            $amtReceived = (float) ($bill['AMOUNTRECIEVED'] ?? $bill['AMTRECEIVED'] ?? $bill['AMOUNT_RECEIVED'] ?? 0);
+            
+            $isSettled = ($bill['SETTLED'] ?? 'N') === 'Y';
+            if (!isset($bill['SETTLED']) && $netAmount > 0 && $amtReceived >= $netAmount) {
+                $isSettled = true;
+            }
+
+            $erpStat = $erpStatuses->get($invoiceNo);
+            $lockDays = $erpStat ? (int) $erpStat->lockdays : 15;
+
+            $billDate = isset($bill['DATE']) ? \Carbon\Carbon::parse($bill['DATE']) : now();
+            $dueDate = (clone $billDate)->addDays($lockDays);
+            
+            $localOverlay = $localBills->get($invoiceNo);
+            
+            $status = $isSettled ? 'paid' : ($dueDate->isPast() ? 'overdue' : 'unpaid');
+            $paymentStatus = $isSettled ? 'paid' : 'unpaid';
+            $amountToPay = $isSettled ? 0 : max(0, $netAmount - $amtReceived);
+            
+            // Apply Local Overlay
+            if ($localOverlay) {
+                $id = $localOverlay->id; 
+                if (!$isSettled) {
+                    if (in_array($localOverlay->payment_status, ['payment_submitted', 'paid'])) {
+                        $paymentStatus = $localOverlay->payment_status;
+                        $status = $localOverlay->payment_status === 'paid' ? 'paid' : 'pending_verification';
+                        
+                        $submittedAmt = (float) ($localOverlay->amount_submitted ?? 0);
+                        $amountToPay = max(0, $netAmount - $amtReceived - $submittedAmt);
+                        
+                        // If they paid it entirely, force paid status if verified
+                        if ($amountToPay <= 0 && $localOverlay->payment_status === 'paid') {
+                            $status = 'paid';
+                        }
+                    } elseif ($localOverlay->payment_status === 'proof_rejected') {
+                        $paymentStatus = 'proof_rejected';
+                        // We do NOT subtract amount_submitted because the proof was rejected
+                    }
+                }
+            } else {
+                // To allow downloads/views, we MUST have a local bill record.
+                // We create it silently so the frontend has an ID to route to.
+                $localRecord = Bill::firstOrCreate(
+                    ['invoice_no' => $invoiceNo],
+                    [
+                        'customer_id' => $customer->id,
+                        'bill_date' => $billDate->format('Y-m-d'),
+                        'due_date' => $dueDate->format('Y-m-d'),
+                        'subtotal' => $netAmount,
+                        'grand_total' => $netAmount,
+                        'amount_received' => $amtReceived,
+                        'is_settled' => $isSettled,
+                        'status' => $status,
+                        'payment_status' => $paymentStatus,
+                    ]
+                );
+                // Also sync existing record if it wasn't an overlay
+                if (!$localRecord->wasRecentlyCreated) {
+                    $localRecord->update([
+                        'amount_received' => $amtReceived,
+                        'is_settled' => $isSettled,
+                        'status' => $status,
+                        'payment_status' => $paymentStatus,
+                    ]);
+                }
+                $id = $localRecord->id;
+            }
+
+            if ($amountToPay > 0) {
+                $outstanding_amount += $amountToPay;
+            }
+
+            $bills[] = [
+                'id' => $id,
+                'invoice_no' => $invoiceNo,
+                'bill_date' => $billDate->format('d M Y'),
+                'due_date' => $dueDate->format('d M Y'),
+                'grand_total' => $netAmount,
+                'amount_received' => $amtReceived,
+                'amount_to_pay' => $amountToPay,
+                'status' => $status,
+                'payment_status' => $paymentStatus,
+                'is_settled' => $isSettled,
+                'proof_screenshot' => $localOverlay->proof_screenshot ?? null,
+            ];
+        }
+
+        // Sort bills: unpaid first, then by due_date
+        usort($bills, function($a, $b) {
+            $statusRank = function($s) {
+                if ($s === 'overdue') return 1;
+                if ($s === 'unpaid') return 2;
+                if ($s === 'pending_verification' || $s === 'payment_submitted') return 3;
+                return 4; // paid
+            };
+            
+            $rankA = $statusRank($a['status']);
+            $rankB = $statusRank($b['status']);
+            
+            if ($rankA === $rankB) {
+                return strtotime($a['due_date']) <=> strtotime($b['due_date']);
+            }
+            return $rankA <=> $rankB;
         });
 
         return response()->json([
@@ -313,6 +455,7 @@ class BillController extends Controller
             'proof_screenshot'      => $path,
             'payment_status'        => 'payment_submitted',
             'payment_submitted_at'  => Carbon::now(),   // actual submission time, not the typed date
+            'amount_submitted'      => $validated['amount_paid'],
         ]);
 
         $bill->load('customer.user');

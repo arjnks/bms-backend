@@ -10,7 +10,7 @@ use Illuminate\Http\Client\Pool;
 
 class SyncErpBills extends Command
 {
-    protected $signature = "erp:sync-bills {--months=12 : Months of history to fetch}";
+    protected $signature = "erp:sync-bills {--months=120 : Months of history to fetch}";
     protected $description = "Sync bills from ERP to local database for all customers";
 
     public function handle()
@@ -50,19 +50,28 @@ class SyncErpBills extends Command
                     $data = $response->json();
                     if (isset($data["status"]) && $data["status"] === "success" && isset($data["data"])) {
                         foreach ($data["data"] as $bill) {
-                            if (!isset($bill["BILLNO"]) && !isset($bill["BN"])) continue;
-                            
-                            $billDate = isset($bill["DATE"]) ? \Carbon\Carbon::parse($bill["DATE"]) : now();
+                            // ERP returns inconsistent casing — try both
+                            $invoiceNo = (string)($bill["BILLNO"] ?? $bill["billno"] ?? $bill["BN"] ?? $bill["bn"] ?? '');
+                            if ($invoiceNo === '') continue;
+
+                            $rawDate  = $bill["DATE"]  ?? $bill["date"]  ?? null;
+                            $billDate = $rawDate ? \Carbon\Carbon::parse($rawDate) : now();
+                            $lockDays = (int)($bill["lockdays"] ?? $bill["LOCKDAYS"] ?? 0);
+                            $dueDate  = $billDate->copy()->addDays($lockDays);
+                            $netAmount = (float)($bill["NETAMOUNT"] ?? $bill["netamount"] ?? 0);
+                            $now = now()->format('Y-m-d H:i:s');
                             $billsToInsert[] = [
-                                "customer_id" => $customerId,
-                                "invoice_no" => $bill["BILLNO"] ?? $bill["BN"],
-                                "bill_date" => $billDate->format("Y-m-d"),
-                                "due_date" => $billDate->copy()->addDays(30)->format("Y-m-d"),
-                                "grand_total" => $bill["NETAMOUNT"] ?? 0,
-                                "subtotal" => $bill["NETAMOUNT"] ?? 0,
-                                "gst_total" => 0,
-                                "status" => $billDate->copy()->addDays(30)->isPast() ? "overdue" : "unpaid",
+                                "customer_id"    => $customerId,
+                                "invoice_no"     => $invoiceNo,
+                                "bill_date"      => $billDate->format("Y-m-d"),
+                                "due_date"       => $dueDate->format("Y-m-d"),
+                                "grand_total"    => $netAmount,
+                                "subtotal"       => $netAmount,
+                                "gst_total"      => 0,
+                                "status"         => $dueDate->isPast() ? "overdue" : "unpaid",
                                 "payment_status" => "unpaid",
+                                "created_at"     => $now,
+                                "updated_at"     => $now,
                             ];
                         }
                     }
@@ -71,8 +80,17 @@ class SyncErpBills extends Command
 
             if (!empty($billsToInsert)) {
                 foreach ($billsToInsert as $b) {
+                    // Use composite key: customer_id + invoice_no (invoice_no is NOT globally unique)
+                    $localBill = Bill::where('customer_id', $b['customer_id'])
+                        ->where('invoice_no', $b['invoice_no'])
+                        ->first();
+                    // Preserve payment state already submitted by customer — don't overwrite with 'unpaid'
+                    if ($localBill && in_array($localBill->payment_status, ['payment_submitted', 'paid', 'proof_rejected'])) {
+                        $b['payment_status'] = $localBill->payment_status;
+                        $b['status']         = $localBill->status;
+                    }
                     Bill::updateOrCreate(
-                        ["invoice_no" => $b["invoice_no"]],
+                        ['customer_id' => $b['customer_id'], 'invoice_no' => $b['invoice_no']],
                         $b
                     );
                 }

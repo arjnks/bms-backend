@@ -463,7 +463,7 @@ class BillController extends Controller
             'payment_verified_at' => Carbon::now(),
         ]);
 
-        if ($bill->customer->user->phone) {
+        if ($bill->customer?->user?->phone) {
             $this->whatsapp->sendTemplate($bill->customer->user->phone, 'payment_verified_v1', [
                 $bill->customer->user->name,
                 $bill->invoice_no
@@ -486,7 +486,7 @@ class BillController extends Controller
             'rejection_reason' => $request->rejection_reason,
         ]);
 
-        if ($bill->customer->user->phone) {
+        if ($bill->customer?->user?->phone) {
             $this->whatsapp->sendTemplate($bill->customer->user->phone, 'payment_rejected_v1', [
                 $bill->customer->user->name,
                 $bill->invoice_no,
@@ -494,9 +494,6 @@ class BillController extends Controller
             ]);
         }
 
-        return response()->json(['message' => 'Payment proof rejected', 'bill' => $bill]);
-    }
-}
         return response()->json(['message' => 'Payment proof rejected', 'bill' => $bill]);
     }
 }
