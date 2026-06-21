@@ -159,29 +159,35 @@ class BillController extends Controller
             ->keyBy('invoice_no');
 
         // Fetch real lockdays from the local cache of ERP statuses
-        $invoiceNos = array_column($erpBills, 'BILLNO') ?: array_column($erpBills, 'BN');
+        $invoiceNos = array_column($erpBills, 'BILLNO')
+            ?: array_column($erpBills, 'billno')
+            ?: array_column($erpBills, 'BN')
+            ?: array_column($erpBills, 'bn');
         $erpStatuses = \App\Models\ErpBillStatus::whereIn('billno', $invoiceNos)->get()->keyBy('billno');
 
         $bills = [];
         $outstanding_amount = 0;
 
         foreach ($erpBills as $bill) {
-            $invoiceNo = $bill['BILLNO'] ?? $bill['BN'] ?? null;
+            // ERP returns inconsistent casing across customers — try both
+            $invoiceNo = $bill['BILLNO'] ?? $bill['billno'] ?? $bill['BN'] ?? $bill['bn'] ?? null;
             if (!$invoiceNo) continue;
 
-            $netAmount  = (float) ($bill['NETAMOUNT'] ?? 0);
-            $amtReceived = (float) ($bill['AMOUNTRECIEVED'] ?? $bill['AMTRECEIVED'] ?? $bill['AMOUNT_RECEIVED'] ?? 0);
-            
-            $isSettled = ($bill['SETTLED'] ?? 'N') === 'Y';
-            if (!isset($bill['SETTLED']) && $netAmount > 0 && $amtReceived >= $netAmount) {
+            $netAmount   = (float) ($bill['NETAMOUNT']  ?? $bill['netamount']  ?? 0);
+            $amtReceived = (float) ($bill['AMOUNTRECIEVED'] ?? $bill['amtreceived'] ?? $bill['AMTRECEIVED'] ?? $bill['amount_received'] ?? 0);
+
+            $settledRaw = $bill['SETTLED'] ?? $bill['settled'] ?? 'N';
+            $isSettled  = $settledRaw === 'Y';
+            if (!$isSettled && $netAmount > 0 && $amtReceived >= $netAmount) {
                 $isSettled = true;
             }
 
-            $erpStat = $erpStatuses->get($invoiceNo);
-            $lockDays = $erpStat ? (int) $erpStat->lockdays : 15;
+            $erpStat  = $erpStatuses->get($invoiceNo);
+            $lockDays = $erpStat ? (int) $erpStat->lockdays : (int)($bill['lockdays'] ?? $bill['LOCKDAYS'] ?? 0);
 
-            $billDate = isset($bill['DATE']) ? \Carbon\Carbon::parse($bill['DATE']) : now();
-            $dueDate = (clone $billDate)->addDays($lockDays);
+            $rawDate  = $bill['DATE'] ?? $bill['date'] ?? null;
+            $billDate = $rawDate ? \Carbon\Carbon::parse($rawDate) : now();
+            $dueDate  = (clone $billDate)->addDays($lockDays);
             
             $localOverlay = $localBills->get($invoiceNo);
             
@@ -213,7 +219,7 @@ class BillController extends Controller
                 // To allow downloads/views, we MUST have a local bill record.
                 // We create it silently so the frontend has an ID to route to.
                 $localRecord = Bill::firstOrCreate(
-                    ['invoice_no' => $invoiceNo],
+                    ['customer_id' => $customer->id, 'invoice_no' => $invoiceNo],
                     [
                         'customer_id' => $customer->id,
                         'bill_date' => $billDate->format('Y-m-d'),
