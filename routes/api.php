@@ -18,7 +18,7 @@ use App\Http\Controllers\Api\V1\Admin\SyncBillsController;
 Route::prefix('v1')->group(function () {
 
     // 🔥 Auth Routes (rate-limited: 5 attempts per 15 minutes per IP) 🛡️
-    Route::middleware('throttle:auth')->group(function () {
+    Route::middleware('throttle:5,15')->group(function () {
         Route::post('/auth/login',    [AuthController::class, 'login']);
         Route::post('/auth/register', [AuthController::class, 'register']);
     });
