@@ -35,7 +35,12 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Registration successful. Waiting for admin approval.',
-            'user' => $user
+            'user' => [
+                'name'     => $user->name,
+                'email'    => $user->email,
+                'username' => $user->username,
+                'status'   => $user->status,
+            ],
         ], 201);
     }
 

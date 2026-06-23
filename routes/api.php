@@ -16,142 +16,101 @@ use App\Http\Controllers\Api\V1\Admin\SyncController;
 use App\Http\Controllers\Api\V1\Admin\SyncBillsController;
 
 Route::prefix('v1')->group(function () {
-    // Auth Routes
-    Route::post('/auth/login', [AuthController::class, 'login']);
-    Route::post('/auth/register', [AuthController::class, 'register']);
-    
-    Route::get('/cleanup-dummies', function() {
-        $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
-        \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
-        \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
-        $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
-        return ['deleted' => $count];
+
+    // 🔥 Auth Routes (rate-limited: 5 attempts per 15 minutes per IP) 🛡️
+    Route::middleware('throttle:auth')->group(function () {
+        Route::post('/auth/login',    [AuthController::class, 'login']);
+        Route::post('/auth/register', [AuthController::class, 'register']);
     });
 
-    // Token route for downloading generated manual bills (bypasses Vercel proxy)
+    // ─── Token-based stream routes (signed short-lived token, no session needed) ─
     Route::get('/customer/bills/stream-token/{token}', [CustomerBillController::class, 'streamByToken'])
         ->name('bills.download.stream');
 
-    // Token route for downloading live ERP bills directly from Railway (bypasses Vercel proxy)
     Route::get('/customer/external-bills/stream-token/{token}', [ExternalBillController::class, 'streamByToken'])
         ->name('external.bills.stream');
 
+    // ─── Authenticated routes ────────────────────────────────────────────────────
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
-        Route::get('/auth/me', [AuthController::class, 'me']);
+        Route::get('/auth/me',      [AuthController::class, 'me']);
 
-        // Admin Routes
+        // ── Admin Routes ─────────────────────────────────────────────────────────
         Route::prefix('admin')->middleware('role:admin')->group(function () {
             Route::get('/overview', [OverviewController::class, 'index']);
-            
+
             // Customers
-            Route::get('/customers', [AdminCustomerController::class, 'index']);
-            Route::post('/customers', [AdminCustomerController::class, 'store']);
-            Route::get('/customers/{id}', [AdminCustomerController::class, 'show']);
-            Route::patch('/customers/{id}', [AdminCustomerController::class, 'update']);
-            Route::delete('/customers/{id}', [AdminCustomerController::class, 'destroy']);
+            Route::get('/customers',              [AdminCustomerController::class, 'index']);
+            Route::post('/customers',             [AdminCustomerController::class, 'store']);
+            Route::get('/customers/{id}',         [AdminCustomerController::class, 'show']);
+            Route::patch('/customers/{id}',       [AdminCustomerController::class, 'update']);
+            Route::delete('/customers/{id}',      [AdminCustomerController::class, 'destroy']);
             Route::post('/customers/{id}/remind', [AdminCustomerController::class, 'remind']);
-            Route::post('/remind/bulk', [AdminCustomerController::class, 'bulkRemind']);
-            
+            Route::post('/remind/bulk',           [AdminCustomerController::class, 'bulkRemind']);
+
             // Customer External Bills
-            Route::get('/customers/{id}/external-bills', [AdminCustomerController::class, 'externalBills']);
-            Route::get('/customers/{id}/external-bills/{billno}/download', [AdminCustomerController::class, 'downloadExternalBill'])->where('billno', '.*');
-            Route::get('/customers/{id}/external-bills/{billno}', [AdminCustomerController::class, 'externalBillDetails'])->where('billno', '.*');
-            
+            Route::get('/customers/{id}/external-bills',                        [AdminCustomerController::class, 'externalBills']);
+            Route::get('/customers/{id}/external-bills/{billno}/download',      [AdminCustomerController::class, 'downloadExternalBill'])->where('billno', '.*');
+            Route::get('/customers/{id}/external-bills/{billno}',               [AdminCustomerController::class, 'externalBillDetails'])->where('billno', '.*');
+
             // Security Logs
             Route::get('/login-logs', [\App\Http\Controllers\Api\V1\Admin\LoginLogController::class, 'index']);
-            
+
             // Bills
-            Route::get('/bills', [AdminBillController::class, 'index']);
-            Route::post('/bills', [AdminBillController::class, 'store']);
-            Route::get('/bills/{id}', [AdminBillController::class, 'show']);
-            Route::get('/bills/{id}/download', [AdminBillController::class, 'download']);
-            Route::post('/bills/{id}/mark-paid', [AdminBillController::class, 'markPaid']);
-            Route::post('/bills/{id}/revert', [AdminBillController::class, 'revertPayment']);
-            Route::post('/bills/{id}/verify-payment', [AdminBillController::class, 'verifyPayment']);
-            Route::post('/bills/{id}/reject-payment', [AdminBillController::class, 'rejectPayment']);
-            
+            Route::get('/bills',                       [AdminBillController::class, 'index']);
+            Route::post('/bills',                      [AdminBillController::class, 'store']);
+            Route::get('/bills/{id}',                  [AdminBillController::class, 'show']);
+            Route::get('/bills/{id}/download',         [AdminBillController::class, 'download']);
+            Route::post('/bills/{id}/mark-paid',       [AdminBillController::class, 'markPaid']);
+            Route::post('/bills/{id}/revert',          [AdminBillController::class, 'revertPayment']);
+            Route::post('/bills/{id}/verify-payment',  [AdminBillController::class, 'verifyPayment']);
+            Route::post('/bills/{id}/reject-payment',  [AdminBillController::class, 'rejectPayment']);
+
             // Users
-            Route::get('/users/pending', [UserApprovalController::class, 'pending']);
-            Route::post('/users/{id}/approve', [UserApprovalController::class, 'approve']);
-            Route::post('/users/{id}/reject', [UserApprovalController::class, 'reject']);
-            
+            Route::get('/users/pending',        [UserApprovalController::class, 'pending']);
+            Route::post('/users/{id}/approve',  [UserApprovalController::class, 'approve']);
+            Route::post('/users/{id}/reject',   [UserApprovalController::class, 'reject']);
+
             // Reminder Rules
-            Route::get('/reminder-rules', [ReminderRuleController::class, 'index']);
-            Route::post('/reminder-rules', [ReminderRuleController::class, 'store']);
-            Route::patch('/reminder-rules/{id}', [ReminderRuleController::class, 'update']);
-            Route::delete('/reminder-rules/{id}', [ReminderRuleController::class, 'destroy']);
-            
+            Route::get('/reminder-rules',           [ReminderRuleController::class, 'index']);
+            Route::post('/reminder-rules',          [ReminderRuleController::class, 'store']);
+            Route::patch('/reminder-rules/{id}',    [ReminderRuleController::class, 'update']);
+            Route::delete('/reminder-rules/{id}',   [ReminderRuleController::class, 'destroy']);
+
             // Settings
-            Route::get('/settings', [SettingController::class, 'index']);
+            Route::get('/settings',  [SettingController::class, 'index']);
             Route::post('/settings', [SettingController::class, 'update']);
 
             // Reports
-            Route::get('/reports/aging', [ReportController::class, 'aging']);
+            Route::get('/reports/aging',       [ReportController::class, 'aging']);
             Route::get('/reports/collections', [ReportController::class, 'collections']);
 
-            // Sync Customers
-            Route::get('/sync/status', [SyncController::class, 'status']);
-            Route::post('/sync/customers', [SyncController::class, 'syncCustomers']);
-
-            // Sync Bills from ERP
-            Route::post('/sync/bills', [SyncBillsController::class, 'syncBills']);
-            Route::get('/sync/bills/status', [SyncBillsController::class, 'billSyncStatus']);
-
-            // Debug and Utility Routes
-            Route::get('/setup-seed', function () {
-                try {
-                    \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
-                    return response()->json(['message' => 'Database seeded successfully. You can now login.']);
-                } catch (\Exception $e) {
-                    return response()->json(['error' => $e->getMessage()]);
-                }
-            });
-            Route::get('/debug-logs', function() { return file_exists(storage_path('logs/laravel.log')) ? file_get_contents(storage_path('logs/laravel.log')) : 'No log'; });
-            Route::get('/dump-bill/{id}', function($id) { $b = \App\Models\Bill::find($id); return $b ? $b : ['error' => 'not found']; });
-            Route::get('/cleanup-dummies', function() {
-                $dummyUsers = \App\Models\User::where('role', 'customer')->where('email', 'not like', 'customer_%')->pluck('id');
-                \App\Models\Bill::whereIn('user_id', $dummyUsers)->delete();
-                \App\Models\ReminderLog::whereIn('user_id', $dummyUsers)->delete();
-                $count = \App\Models\User::whereIn('id', $dummyUsers)->delete();
-                return ['deleted' => $count];
-            });
-            Route::get("/test-r2-env", function() {
-                return [
-                    "bucket" => config("filesystems.disks.r2.bucket"),
-                    "has_key" => !empty(config("filesystems.disks.r2.key")),
-                    "has_secret" => !empty(config("filesystems.disks.r2.secret")),
-                    "has_endpoint" => !empty(config("filesystems.disks.r2.endpoint")),
-                    "env_key" => !empty(env("CLOUDFLARE_R2_ACCESS_KEY_ID"))
-                ];
-            });
+            // Sync
+            Route::get('/sync/status',          [SyncController::class, 'status']);
+            Route::post('/sync/customers',      [SyncController::class, 'syncCustomers']);
+            Route::post('/sync/bills',          [SyncBillsController::class, 'syncBills']);
+            Route::get('/sync/bills/status',    [SyncBillsController::class, 'billSyncStatus']);
         });
 
-        // Customer Routes
+        // ── Customer Routes ───────────────────────────────────────────────────────
         Route::prefix('customer')->middleware('role:customer,marketing_company')->group(function () {
-            Route::get('/bills', [CustomerBillController::class, 'index']);
-            Route::get('/bills/{id}', [CustomerBillController::class, 'show']);
-            Route::get('/bills/{id}/download', [CustomerBillController::class, 'download']);
-            Route::post('/bills/{id}/submit-payment', [CustomerBillController::class, 'submitPayment']);
-            // Customer self-service preferences
-            Route::get('/preferences', [CustomerPreferenceController::class, 'show']);
-            Route::patch('/preferences', [CustomerPreferenceController::class, 'update']);
-            // Live bills from billing system
-            Route::get('/live-bills', [ExternalBillController::class, 'index']);
-            Route::get('/live-bills/{billno}/download', [ExternalBillController::class, 'download'])->where('billno', '.*');
-            Route::get('/live-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
-            
-            // Keep old routes for backward compat
-            Route::get('/external-bills', [ExternalBillController::class, 'index']);
-            Route::get('/external-bills/{billno}/download', [ExternalBillController::class, 'download'])->where('billno', '.*');
-            // Signed URL generator — returns Railway-direct URL, avoids Vercel proxy for binary files
-            Route::get('/external-bills/{billno}/download-url', [ExternalBillController::class, 'downloadUrl'])->where('billno', '.*');
-            Route::get('/external-bills/{billno}', [ExternalBillController::class, 'show'])->where('billno', '.*');
+            Route::get('/bills',                        [CustomerBillController::class, 'index']);
+            Route::get('/bills/{id}',                   [CustomerBillController::class, 'show']);
+            Route::get('/bills/{id}/download',          [CustomerBillController::class, 'download']);
+            Route::post('/bills/{id}/submit-payment',   [CustomerBillController::class, 'submitPayment']);
+
+            Route::get('/preferences',  [CustomerPreferenceController::class, 'show']);
+            Route::patch('/preferences',[CustomerPreferenceController::class, 'update']);
+
+            Route::get('/live-bills',                               [ExternalBillController::class, 'index']);
+            Route::get('/live-bills/{billno}/download',             [ExternalBillController::class, 'download'])->where('billno', '.*');
+            Route::get('/live-bills/{billno}',                      [ExternalBillController::class, 'show'])->where('billno', '.*');
+
+            // Backward compat aliases
+            Route::get('/external-bills',                           [ExternalBillController::class, 'index']);
+            Route::get('/external-bills/{billno}/download',         [ExternalBillController::class, 'download'])->where('billno', '.*');
+            Route::get('/external-bills/{billno}/download-url',     [ExternalBillController::class, 'downloadUrl'])->where('billno', '.*');
+            Route::get('/external-bills/{billno}',                  [ExternalBillController::class, 'show'])->where('billno', '.*');
         });
     });
 });
-
-
-Route::get('/debug-url', function() { return response()->json(['config' => config('services.external_billing.url'), 'env' => env('EXTERNAL_BILLING_URL')]); });
-
-Route::get('/erp-test', [App\Http\Controllers\Api\V1\Admin\BillController::class, 'overview']);

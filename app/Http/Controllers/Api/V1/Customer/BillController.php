@@ -439,10 +439,10 @@ class BillController extends Controller
 
         $validated = $request->validate([
             'payment_method' => ['required', Rule::in(['gpay', 'neft'])],
-            'utr_number' => 'required|string',
-            'amount_paid' => 'required|numeric|min:0',
-            'payment_date' => 'required|date',
-            'screenshot' => 'required|file|mimes:jpeg,png,jpg,pdf|max:5120',
+            'utr_number'     => 'required|string|min:6|max:50|alpha_num',
+            'amount_paid'    => 'required|numeric|min:1|max:9999999',
+            'payment_date'   => 'required|date|before_or_equal:today',
+            'screenshot'     => 'required|file|mimes:jpeg,png,jpg,pdf|max:5120',
         ]);
 
         // Upload proof directly to R2 — no local storage
